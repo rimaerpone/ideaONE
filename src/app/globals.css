@@ -1,0 +1,209 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-vazirmatn), 'Vazirmatn', 'Tahoma', sans-serif;
+  --font-mono: var(--font-vazirmatn), monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.99 0.004 80);
+  --foreground: oklch(0.23 0.015 55);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.23 0.015 55);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.23 0.015 55);
+  /* تراکوتا #C0623B — هم‌خانواده پالت گزارش ممیزی و صنعت کاشی */
+  --primary: oklch(0.56 0.128 42);
+  --primary-foreground: oklch(0.99 0.005 80);
+  --secondary: oklch(0.955 0.012 70);
+  --secondary-foreground: oklch(0.32 0.03 50);
+  --muted: oklch(0.955 0.008 75);
+  --muted-foreground: oklch(0.52 0.02 60);
+  --accent: oklch(0.94 0.03 55);
+  --accent-foreground: oklch(0.35 0.06 45);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.9 0.012 70);
+  --input: oklch(0.9 0.012 70);
+  --ring: oklch(0.56 0.128 42);
+  --chart-1: oklch(0.56 0.128 42);
+  --chart-2: oklch(0.55 0.09 130);
+  --chart-3: oklch(0.45 0.04 60);
+  --chart-4: oklch(0.75 0.12 75);
+  --chart-5: oklch(0.65 0.06 50);
+  --sidebar: oklch(0.26 0.02 50);
+  --sidebar-foreground: oklch(0.93 0.01 75);
+  --sidebar-primary: oklch(0.56 0.128 42);
+  --sidebar-primary-foreground: oklch(0.99 0.005 80);
+  --sidebar-accent: oklch(0.32 0.025 50);
+  --sidebar-accent-foreground: oklch(0.95 0.01 75);
+  --sidebar-border: oklch(0.35 0.02 50);
+  --sidebar-ring: oklch(0.56 0.128 42);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss02";
+  }
+}
+
+/* اسکرول‌بار سبک برای فهرست‌های بلند */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: oklch(0.8 0.02 60);
+  border-radius: 999px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- P2.5-U7 / P2-T7 — چاپ نامه با سربرگ (پورتال چاپ) ----------
+ * الگو: پورتال body-level؛ در نمایش = پیش‌نمایش A4 روی پس‌زمینه؛ در چاپ = تنها محتوای صفحه.
+ * حذف همه فرزندان body جز پورتال چاپ — شل، توست و پورتال‌های Radix مخفی می‌شوند.
+ * @page با حاشیه ۱۲ میلی‌متر؛ در چاپ عرض کاغذ auto می‌شود تا در ناحیه قابل‌چاپ پرینتر جا شود
+ * (پیش‌نمایش نمایشی همان ۲۱۰×۲۹۷ با پدینگ داخلی است — کد واحد، دو قاب).
+ */
+.letter-print-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: hsl(0 0% 0% / 0.55);
+  display: flex;
+  flex-direction: column;
+}
+.letter-print-scroll { flex: 1; min-height: 0; }
+.letter-print-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 14mm 16mm;
+  display: flex;
+  flex-direction: column;
+}
+.letter-print-rule {
+  margin-top: 2.5mm;
+  border-top: 0.6mm double hsl(0 0% 20%);
+}
+.letter-print-footer { margin-top: auto; padding-top: 8mm; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { background: white !important; }
+  body > :not(.letter-print-root):not(.report-print-root) { display: none !important; }
+  .letter-print-root {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    background: white !important;
+    display: block !important;
+  }
+  .no-print { display: none !important; }
+  .letter-print-scroll { overflow: visible !important; padding: 0 !important; flex: none !important; }
+  .letter-print-sheet {
+    width: auto !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  .letter-print-footer { page-break-inside: avoid; }
+}
+
+/* ---------- P2-T13 — چاپ گزارش هفتگی کارتابل ----------
+ * الگوی پورتال body-level (آینه U7): در نمایش مخفی؛ در چاپ تنها محتوای صفحه.
+ * فقط هنگام فعال‌بودن حالت چاپ در DOM رندر می‌شود (ReportPrintRoot در settings-view).
+ */
+.report-print-root { display: none; }
+@media print {
+  .report-print-root {
+    display: block !important;
+    padding: 0;
+    background: white;
+    color: black;
+  }
+  .report-print-root table { width: 100%; border-collapse: collapse; }
+  .report-print-root th, .report-print-root td {
+    border: 0.3mm solid hsl(0 0% 30%);
+    padding: 2mm 3mm;
+    text-align: right;
+  }
+  .report-print-root thead th { background: hsl(0 0% 92%); }
+  .report-print-root .report-print-footer { margin-top: 6mm; font-size: 10pt; color: hsl(0 0% 35%); page-break-inside: avoid; }
+}

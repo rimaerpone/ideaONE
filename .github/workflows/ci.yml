@@ -1,0 +1,117 @@
+# P0.5-T3 — CI مینیمم (GitHub Actions)
+# هدف معیار پذیرش: «PR بعدی بدون CI سبز merge نشود»
+#
+# دو job:
+#  ۱. quality (همیشه، دروازه merge): check + tsc + lint + unit — بدون نیاز به DB
+#  ۲. e2e (مشروط به راز DATABASE_URL): سرور dev + باتری‌های fetch زنده روی Neon
+#     با E2E_WAIT_SCALE=3 (جبران WAN ~۲۲۰ms طبق درس مهاجرت Neon)
+#
+# golden (مرورگری) در runner ابری قابل اجرا نیست (وابسته به agent-browser +
+# گیت‌وی Caddy:81 + سرویس بلادرنگ) — روی runner سندباکس/self-hosted با
+# متغیر RUN_GOLDEN_CI=true فعال می‌شود (بند مستندات 05-test-coverage).
+#
+# فعال‌سازی e2e: در Settings → Secrets → Actions راز DATABASE_URL (رشته Neon)
+# را ثبت کنید. بدون راز، job بی‌صدا رد می‌شود (خروجی: Skipped).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: کیفیت (check + tsc + lint + unit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: نصب وابستگی‌ها
+        run: bun install --frozen-lockfile
+
+      - name: تولید کلاینت Prisma
+        run: bun run db:generate
+
+      - name: دروازه کیفیت ساختار و مستندات (check)
+        env:
+          IO_ROOT: ${{ github.workspace }}
+        run: bun run check
+
+      - name: بررسی تایپ‌ها (tsc)
+        run: bunx tsc --noEmit
+
+      - name: لینت
+        run: bun run lint
+
+      - name: تست‌های واحد (مسیرهای بحرانی — mock، بدون DB)
+        run: bun run test:unit
+
+  e2e:
+    name: رگرسیون زنده (E2E_WAIT_SCALE=3)
+    runs-on: ubuntu-latest
+    needs: quality
+    # فقط وقتی راز DATABASE_URL تنظیم شده باشد (پیش‌فرض: رد می‌شود)
+    if: ${{ secrets.DATABASE_URL != '' }}
+    env:
+      E2E_WAIT_SCALE: '3'
+      TEST_BASE_URL: http://127.0.0.1:3000
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: نصب وابستگی‌ها
+        run: bun install --frozen-lockfile
+
+      - name: تولید کلاینت Prisma
+        run: bun run db:generate
+
+      - name: راه‌اندازی سرور dev (double-fork طبق AGENTS بند ۱۴)
+        run: |
+          ( setsid bash -c 'exec node node_modules/.bin/next dev -p 3000 > dev.log 2>&1' < /dev/null & )
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/auth/me 2>/dev/null || echo 000)
+            if [ "$code" != "000" ]; then echo "سرور بالا آمد (کد $code)"; exit 0; fi
+            sleep 5
+          done
+          echo "::error::سرور dev در ۲۰۰ ثانیه بالا نیامد"
+          tail -40 dev.log
+          exit 1
+
+      - name: باتری P0.5-T3 (گارد CSRF + ماندگاری نرخ + scrypt غیرمسدودکننده)
+        run: bunx tsx scripts/test-p05-t3.ts
+
+      - name: باتری امنیت ورود (نرخ + سجل ناموفق)
+        run: bunx tsx scripts/test-login-security.ts
+
+      - name: golden مرورگری (فقط runner سندباکس/self-hosted)
+        if: ${{ vars.RUN_GOLDEN_CI == 'true' }}
+        run: |
+          if command -v agent-browser >/dev/null 2>&1 && curl -s -o /dev/null http://localhost:81; then
+            bunx tsx scripts/e2e-golden.ts
+          else
+            echo "::notice::agent-browser یا گیت‌وی :81 در دسترس نیست — golden در این runner اجرا نمی‌شود (پیش‌بین‌شده)"
+          fi
+
+      - name: بارگذاری گزارش‌ها در صورت شکست
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-e2e
+          path: |
+            dev.log
+            download/qa-e2e-golden/
+          if-no-files-found: ignore
+          retention-days: 7

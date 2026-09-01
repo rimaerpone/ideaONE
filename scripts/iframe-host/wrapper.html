@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>شبیه‌ساز پنل پیش‌نمایش (iframe سایت متقاطع)</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; background: #f1f5f9; }
+    .bar { padding: 8px 16px; background: #0f172a; color: #fff; font-size: 13px; }
+    iframe { width: 100%; height: calc(100vh - 36px); border: 1px solid #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="bar">پنل میزبان (origin: localhost:3005) — برنامه داخل iframe سایت متقاطع، همانند پنل پیش‌نمایش</div>
+  <iframe src="http://127.0.0.1:81/" allow="clipboard-read; clipboard-write"></iframe>
+</body>
+</html>
