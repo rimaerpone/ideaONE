@@ -28,7 +28,7 @@
 | test-warehouses-crud.ts | fetch-e2e | CRUD انبار + نوع سه‌گانه | ۲۱ | `bunx tsx scripts/test-warehouses-crud.ts` | 🟢 |
 | test-list-contract.ts | fetch-e2e | قرارداد لیست (فیلتر/sort/صفحه‌بندی/sq) | ~۲۰ | `bunx tsx scripts/test-list-contract.ts` | 🟡 ۱ سنجه داده‌وابسته (بند ۵) |
 | test-t5-fts.ts | fetch+db | جستجوی تمام‌متن فارسی (tsvector/GIN) | ۴۹ | `bunx tsx scripts/test-t5-fts.ts` | 🟡 داده‌وابسته (بند ۵) |
-| e2e-golden.ts | browser-e2e | مسیرهای طلایی G1..G8 + اعلان زنده | ۸ گام | `bunx tsx scripts/e2e-golden.ts` (WAN: `E2E_WAIT_SCALE=3`) | 🟡 باتری کامل به‌تعویق‌افتاده (T1) — در نشست بعدی |
+| e2e-golden.ts | browser-e2e | مسیرهای طلایی G1..G8 + اعلان زنده | ۸ گام | `bunx tsx scripts/e2e-golden.ts` (WAN: `E2E_WAIT_SCALE=3`) | ✅ **سبز کامل ۱۴۰۵/۰۶/۱۷ — 8/8** (گزارش: `download/qa-e2e-golden/report.md`؛ بدهی T1 بسته شد) |
 | باتری‌های UX (u2..u10، t26/t35/t37، dash-v2، coding-ui) | browser-e2e | صفحات/جریان‌های UX | ~۴۰۰+ | `bunx tsx scripts/test-u*.ts` | 🟢 (اجرای دوره‌ای سندباکس؛ خودکار نشده) |
 | test-indexes / test-perf / db-check | db | ایندکس/کارایی/صحت | متغیر | دستی | 🟢 |
 
@@ -40,7 +40,7 @@
 | **REQ-ID** | traceability سناریو↔تست سه‌گانه | گام بعد از سبز شدن P0.5 (نقشه ۱۸گامی گام ۱۰) |
 | **golden در CI ابری** | رگرسیون مرورگری فقط سندباکس | محدودیت ابزار (agent-browser+گیت‌وی)؛ runner self-hosted آینده |
 | **u2..u10 در CI** | UX بدون دروازه merge خودکار | همان محدودیت golden |
-| **داده seed:big** | دو باتری داده‌وارده (بند ۵) | بازسازی در نشست بعدی (پیش از golden) |
+| ~~داده seed:big~~ | ~~دو باتری داده‌وارده~~ | ✅ بسته شد ۱۴۰۵/۰۶/۱۷: seed:big بازسازی (۱۰٬۰۳۵ نامه + FTS) → t5-fts 51/51 · list-contract کامل سبز |
 
 ## ۴. فعال‌سازی کامل CI (اقدامات مالک مخزن)
 
@@ -50,7 +50,7 @@
 
 ## ۵. وابستگی داده‌ای باتری‌ها (کشف ۱۴۰۵/۰۶/۱۰)
 
-seed مجدد رجیستری در P0.5-T2، دادهٔ seed:big (۱۰٬۲۹۳ نامه) را با دادهٔ کوچک seed پایه (۳۵ نامه) جایگزین کرد. باتری‌هایی که به حجم/محتوای بزرگ وابسته‌اند: `test-t5-fts` (۱۲ سنجه مانند «استعلام=۴۷۶») و `test-list-contract` (۱ سنجه inbox غیرخالی برای کاربر آزمون). **اقدام**: بازسازی `bun run seed:big` + rebuild FTS در نشست بعدی پیش از تکمیل golden. سیاست آینده: هر باتری داده‌وابسته باید دادهٔ خودش را بسازد/پاک کند (الگوی test-p05-t3 با IP/username یکتا).
+seed مجدد رجیستری در P0.5-T2، دادهٔ seed:big (۱۰٬۲۹۳ نامه) را با دادهٔ کوچک seed پایه (۳۵ نامه) جایگزین کرد. باتری‌هایی که به حجم/محتوای بزرگ وابسته‌اند: `test-t5-fts` (۱۲ سنجه مانند «استعلام=۴۷۶») و `test-list-contract` (۱ سنجه inbox غیرخالی برای کاربر آزمون). **اقدام** — ✅ انجام شد ۱۴۰۵/۰۶/۱۷: `seed:big` بازسازی (۱۰٬۰۳۵ نامه · ۵٬۰۲۵ سند · FTS ۱۰٬۰۳۵ ردیف در ۸۱ ثانیه، خودش rebuild می‌کند) → t5-fts **51/51** · list-contract **کامل سبز** · golden **8/8**. سیاست آینده: هر باتری داده‌وابسته باید دادهٔ خودش را بسازد/پاک کند (الگوی test-p05-t3 با IP/username یکتا).
 
 ## ۶. یادداشت‌های معماری تست
 
