@@ -44,8 +44,8 @@
 
 ## ۴. فعال‌سازی کامل CI (اقدامات مالک مخزن)
 
-1. **راز DB**: Settings → Secrets and variables → Actions → New repository secret → نام `DATABASE_URL`، مقدار = رشتهٔ اتصال Neon (همان `.env` سندباکس). بدون آن job `e2e` رد می‌شود (by-design).
-2. **حفاظت شاخه (merge gate)**: Settings → Branches → Add branch ruleset برای `main`: ✅ Require status checks → `کیفیت (check + tsc + lint + unit)` (و پس از فعال‌سازی راز: `رگرسیون زنده`) → ✅ Require branches to be up to date. ⚠ این تنظیم فقط از UI/API مالک ممکن است — از سمت کد قابل اعمال نیست. **یافتهٔ ۱۴۰۵/۰۶/۱۰ (تلاش API ثبت شد)**: مخزن خصوصی روی پلن رایگان GitHub است — branch protection نیازمند GitHub Pro یا عمومی‌کردن مخزن است (پاسخ ۴۰۳). تا حکم کارفرما: وضعیت CI روی هر PR دیده می‌شود (قرمز = آشکار) ولی merge فنیاً بسته نشده — **انتظار می‌رود هر PR بدون CI سبز merge نشود (قرارداد تیمی)**. گزینه‌ها برای کارفرما: ارتقای پلن / عمومی‌کردن / قاعدهٔ انضباطی.
+1. **راز DB** — ✅ **انجام شد ۱۴۰۵/۰۶/۱۱ (CMD-012)**: راز `DATABASE_URL` از طریق API با رمزنگاری SealedBox ثبت شد (`scripts/set-ci-secret.sh`)؛ job رگرسیون زنده از این پس روی push/PR مخزن اجرا می‌شود.
+2. **حفاظت شاخه (merge gate)** — ✅ **فعال شد ۱۴۰۵/۰۶/۱۱ (CMD-012، حکم کارفرما: عمومی‌کردن)**: مخزن عمومی شد و branch protection با required check `کیفیت (check + tsc + lint + unit)` + `strict: true` از طریق API اعمال شد؛ `enforce_admins: false` (مالک push مستقیم دارد، سایرین PR+CI سبز). تاریخ ۴۰۳ (مخزن خصوصی/پلن رایگان) بسته شد؛ جزئیات و پاک‌سازی امنیتی در `docs/decisions/CMD-012-public-baseline.md`.
 3. **golden خودکار (اختیاری)**: متغیر مخزن `RUN_GOLDEN_CI=true` + runner self-hosted دارای agent-browser و گیت‌وی.
 
 ## ۵. وابستگی داده‌ای باتری‌ها (کشف ۱۴۰۵/۰۶/۱۰)
