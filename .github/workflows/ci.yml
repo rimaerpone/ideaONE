@@ -5,6 +5,9 @@
 #  ۱. quality (همیشه، دروازه merge): check + tsc + lint + unit — بدون نیاز به DB
 #  ۲. e2e (مشروط به راز DATABASE_URL): سرور dev + باتری‌های fetch زنده روی Neon
 #     با E2E_WAIT_SCALE=3 (جبران WAN ~۲۲۰ms طبق درس مهاجرت Neon)
+#     ⚠ درس CMD-012: زمینهٔ secrets در if سطح-job مجاز نیست (Unrecognized named-value
+#     → شکست راه‌اندازی کل workflow با صفر job) — گارد راز باید در سطح step از
+#     طریق env+output باشد
 #
 # golden (مرورگری) در runner ابری قابل اجرا نیست (وابسته به agent-browser +
 # گیت‌وی Caddy:81 + سرویس بلادرنگ) — روی runner سندباکس/self-hosted با
@@ -19,6 +22,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -59,8 +63,6 @@ jobs:
     name: رگرسیون زنده (E2E_WAIT_SCALE=3)
     runs-on: ubuntu-latest
     needs: quality
-    # فقط وقتی راز DATABASE_URL تنظیم شده باشد (پیش‌فرض: رد می‌شود)
-    if: ${{ secrets.DATABASE_URL != '' }}
     env:
       E2E_WAIT_SCALE: '3'
       TEST_BASE_URL: http://127.0.0.1:3000
@@ -72,13 +74,28 @@ jobs:
         with:
           bun-version: latest
 
+      # گارد راز در سطح step (درس CMD-012): secrets فقط در env قابل خواندن است
+      - name: گارد راز DATABASE_URL
+        id: guard
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "راز موجود است — باتری‌های زنده اجرا می‌شوند"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::راز DATABASE_URL تنظیم نشده — باتری‌های زنده رد شدند (خروجی: بدون آزمون)"
+          fi
+
       - name: نصب وابستگی‌ها
+        if: steps.guard.outputs.enabled == 'true'
         run: bun install --frozen-lockfile
 
       - name: تولید کلاینت Prisma
+        if: steps.guard.outputs.enabled == 'true'
         run: bun run db:generate
 
       - name: راه‌اندازی سرور dev (double-fork طبق AGENTS بند ۱۴)
+        if: steps.guard.outputs.enabled == 'true'
         run: |
           ( setsid bash -c 'exec node node_modules/.bin/next dev -p 3000 > dev.log 2>&1' < /dev/null & )
           for i in $(seq 1 40); do
@@ -91,13 +108,15 @@ jobs:
           exit 1
 
       - name: باتری P0.5-T3 (گارد CSRF + ماندگاری نرخ + scrypt غیرمسدودکننده)
+        if: steps.guard.outputs.enabled == 'true'
         run: bunx tsx scripts/test-p05-t3.ts
 
       - name: باتری امنیت ورود (نرخ + سجل ناموفق)
+        if: steps.guard.outputs.enabled == 'true'
         run: bunx tsx scripts/test-login-security.ts
 
       - name: golden مرورگری (فقط runner سندباکس/self-hosted)
-        if: ${{ vars.RUN_GOLDEN_CI == 'true' }}
+        if: steps.guard.outputs.enabled == 'true' && vars.RUN_GOLDEN_CI == 'true'
         run: |
           if command -v agent-browser >/dev/null 2>&1 && curl -s -o /dev/null http://localhost:81; then
             bunx tsx scripts/e2e-golden.ts
