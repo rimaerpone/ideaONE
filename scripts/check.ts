@@ -268,16 +268,25 @@ const docFiles = walk(join(ROOT, 'docs'), ['.md'])
   missing.length ? fail('CH-16', `ماژول بدون SPEC: ${missing.join(', ')}`) : ok('CH-16', `${mods.length} ماژول — همه با SPEC`)
 }
 // CH-17: مسیرهای backtick در فایل‌های ایندکس وجود دارند
+// درس CMD-012 (خط پایهٔ عمومی): مسیرهای gitignore شده «مصنوعات محلی»اند (بایگانی/تحویل‌داده) —
+// نباید روی کلون تازه وجود داشته باشند؛ فقط ارجاعات داخل مخزن سنجیده می‌شوند.
 {
+  const isIgnored = (p: string) => {
+    try {
+      execSync(`git check-ignore -q ${JSON.stringify(join(ROOT, p))}`, { stdio: 'pipe' })
+      return true // exit 0 = ignored
+    } catch { return false } // exit 1 = tracked یا ناموجود در قواعد
+  }
   const broken: string[] = []
   for (const f of [join(ROOT, 'AGENTS.md'), join(ROOT, 'README.md'), join(ROOT, 'docs/README.md')]) {
     for (const m of read(f).matchAll(/`([^`\n]+)`/g)) {
       const p = m[1].trim()
       if (!/^(docs|scripts|src|upload|download|archive|mini-services|prisma|public|db)\//.test(p) || p.includes('<') || p.includes('*')) continue
+      if (isIgnored(p)) continue // مصنوع محلی (CMD-012) — خارج از مخزن عمومی
       if (!existsSync(join(ROOT, p)) && !existsSync(resolve(dirname(f), p))) broken.push(`${relative(ROOT, f)} → ${p}`)
     }
   }
-  broken.length ? fail('CH-17', `مسیر ارجاع‌شده وجود ندارد: ${broken.join(' · ')}`) : ok('CH-17', 'همه مسیرهای ارجاع‌شده در ایندکس‌ها موجود')
+  broken.length ? fail('CH-17', `مسیر ارجاع‌شده وجود ندارد: ${broken.join(' · ')}`) : ok('CH-17', 'همه مسیرهای ارجاع‌شده در ایندکس‌ها موجود (مسیرهای محلی gitignored رد شدند)')
 }
 
 // ───────────────────────── F. رجیستری ↔ کد ─────────────────────────

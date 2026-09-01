@@ -283,4 +283,6 @@ src/
 | سند اصلی محصول | `upload/ideaone idea.txt` |
 | پژوهش‌های بنچمارک (Odoo/Axelor/تیم‌یار/راهکاران) | `research/` |
 
+> **۱۴۰۵/۰۶/۱۱ — خط پایهٔ عمومی (CMD-012):** ردیف‌های مصنوع محلی (`download/` · `research/` ریشه · `upload/ideaone idea.txt` · `db/custom.db` · `worklog.md`) **فقط در سندباکس** موجودند و gitignore شده‌اند؛ مخزن عمومی گیت‌هاب فقط سورس/مستندات/CI را دارد. تاریخ کامل توسعه (۱۲۶+ کامیت) در ref محلی `archive/pre-public-history` + بستهٔ `db/snapshots/ideaONE-history-pre-public-*.bundle` بازیافتنی است.
+
 **قانون مستندات**: هر تغییر رفتاری (فیلد فرم/ستون نما/endpoint/مدل داده) در همان PR سند مربوطه را به‌روزرسانی می‌کند — بدون به‌روزرسانی سند، PR رد می‌شود. ارجاع وظیفه در کد: `// TODO(Pn-Tkk): …`.
