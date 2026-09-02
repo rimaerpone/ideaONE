@@ -4,6 +4,9 @@ import { db } from '@/core/shared/db'
 import { getSessionCtx, type SessionContext } from '@/core/auth/auth'
 import { jalaliYear } from '@/core/shared/jalali'
 import { isModuleEnabled } from '@/core/tenancy/module-access'
+import { getCompanySetting } from '@/core/tenancy/company-settings'
+import { LETTER_NUMBERING_KEY, parseLetterNumbering } from '@/core/shared/numbering'
+import type { LetterNumberingConfig } from '@/types/platform'
 
 // ---------- گارد احراز هویت ----------
 // قاعده AGENTS.md: هر route/service با requireCtx شروع می‌شود.
@@ -54,6 +57,33 @@ export async function nextDocNumber(companyId: string, scope: string): Promise<n
     update: { value: { increment: 1 } },
   })
   return counter.value
+}
+
+/**
+ * P2-T8 (R9) — پیکربندی شماره‌گذاری نامه per-type شرکت فعال
+ * (کلید CompanySetting: letters.numbering — خواندن unique-index ارزان، بدون کش تا تغییر
+ * تنظیم بلافاصله در شماره‌گذاری/نمایش حاکم باشد). غیبت/خرابی = پیش‌فرض سری مشترک.
+ */
+export async function getLetterNumbering(companyId: string | null): Promise<LetterNumberingConfig> {
+  return parseLetterNumbering(await getCompanySetting(companyId, LETTER_NUMBERING_KEY))
+}
+
+/**
+ * پیکربندی شماره‌گذاری چند شرکت در یک پرس‌وجو — برای فهرست/CSV چندشرکتی (دامنه هلدینگ)
+ * که هر نامه باید با پیکربندی شرکتِ خودش نمایش داده شود. شرکت بدون تنظیم = پیش‌فرض.
+ */
+export async function getLetterNumberings(companyIds: string[]): Promise<Map<string, LetterNumberingConfig>> {
+  const map = new Map<string, LetterNumberingConfig>()
+  if (companyIds.length === 0) return map
+  const rows = await db.companySetting.findMany({
+    where: { companyId: { in: companyIds }, key: LETTER_NUMBERING_KEY },
+    select: { companyId: true, value: true },
+  })
+  const byCompany = new Map(rows.map((r) => [r.companyId, r.value]))
+  for (const id of companyIds) {
+    map.set(id, parseLetterNumbering(byCompany.get(id) ?? null))
+  }
+  return map
 }
 
 // ---------- برچسب‌های فارسی مشترک ----------

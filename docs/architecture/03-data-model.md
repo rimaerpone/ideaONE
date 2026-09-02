@@ -280,7 +280,7 @@ P1-T8 بسته شد: لیست دستگاه‌های فعال با آخرین ف�
 |---|---|---|---|---|
 | id | String | ✔ | — | |
 | companyId | String | ✔ | FK | مالک نامه |
-| number | Int | ✔ | DocCounter scope=LETTER | سالانه per-company |
+| number | Int | ✔ | DocCounter — scope=LETTER یا LETTER:INCOMING/OUTGOING/INTERNAL (P2-T8 سری جدا per-type) | سالانه per-company+scope |
 | type | String | ✔ | `INCOMING` \| `OUTGOING` \| `INTERNAL` | |
 | subject | String | ✔ | trim، غیرخالی | موضوع |
 | body | String | ✔ | trim، غیرخالی | متن کامل |
@@ -293,9 +293,10 @@ P1-T8 بسته شد: لیست دستگاه‌های فعال با آخرین ف�
 | currentHolderId | String? | — | FK→User | دارنده فعلی (کارتابل)؛ ARCHIVED → null |
 | creatorId | String | ✔ | FK→User | ثبت‌کننده |
 | aiCategory / aiSummary | String? | — | فقط پس از HITL (تطبیق ۶۰/۸۰۰ کاراکتر) | خروجی تأییدشده AI |
+| relationLetterId | String? | — | self-FK «LetterRelations» + ایندکس + onDelete: SetNull | P2-T9 — عطف تک‌والد به نامهٔ مرجع؛ حذف مرجع = عطف آویزان SetNull می‌شود |
 | createdAt / updatedAt | DateTime | ✔ | now/@updatedAt | |
 
-شکاف v1 (→ P2): پیوست، عطف/ارتباط نامه‌ها، پاسخ متنی (فعلاً action است نه متن)، جستجوی FTS، چاپ.
+شکاف v1 (→ P2): ~~عطف/ارتباط نامه‌ها~~ **انجام (P2-T9/R9 — عطف دوسویه با زنجیرهٔ ۵ سطحی؛ حلقه/عمق/دامنه گارد سروری)** · ~~شماره‌گذاری پیکربندی‌پذیر per-type~~ **انجام (P2-T8/R9 — کلید CompanySetting `letters.numbering`: سری جدا + پیشوند/پسوند + displayNumber سرورساخته)** · پیوست، پاسخ متنی، جستجوی FTS، چاپ — انجام/در صف R10.
 
 ## ۱۹. LetterReferral — گام گردش نامه (زنجیره ارجاع)
 

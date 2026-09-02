@@ -20,12 +20,46 @@ const REALTIME_HEALTH_URL = 'http://127.0.0.1:3004/healthz'
 export type JobRunner = () => Promise<string> // خروجی = گزارش کوتاه اجرا
 
 // رجیستری سراسری — مقاوم در برابر چند نمونه ماژول در dev (HMR)
-const g = globalThis as { __ideaoneSchedulerStarted?: boolean; __ideaoneJobRunners?: Map<string, JobRunner> }
+const g = globalThis as { __ideaoneSchedulerStarted?: boolean; __ideaoneJobRunners?: Map<string, JobRunner>; __ideaoneJobRowsEnsured?: Set<string> }
 const RUNNERS: Map<string, JobRunner> = (g.__ideaoneJobRunners ??= new Map())
+// P2-T11 (بازسازی رگرسیون seed) — ردیف‌های DB که در این فرایند ensure شده‌اند
+const ENSURED: Set<string> = (g.__ideaoneJobRowsEnsured ??= new Set())
 
-/** ثبت اجراکننده یک کار ماژولی — idempotent (بازنویسی همان کلید بی‌ضرر است) */
-export function registerJobRunner(key: string, runner: JobRunner): void {
+/** تعریف ثابت ردیف برای هر runner (label فارسی + بازه پیش‌فرض) — مبنای ensure خودکار */
+export type JobRowDef = { name: string; intervalSec: number; note?: string }
+const JOB_ROW_DEFS: Map<string, JobRowDef> = new Map([
+  ['outbox-processor', { name: 'پردازشگر رویدادهای Outbox', intervalSec: 60, note: 'تحویل رویدادهای در صف — بسته P0-T18' }],
+  ['health-monitor', { name: 'پایش سلامت', intervalSec: 120, note: 'دیتابیس + سرویس بلادرنگ — بسته P0-T14' }],
+  ['session-purger', { name: 'پاکسازی نشست‌های منقضی', intervalSec: 3600, note: 'بهداشت جدول نشست — بسته P1-T9' }],
+])
+
+/**
+ * ثبت اجراکننده یک کار ماژولی — idempotent (بازنویسی همان کلید بی‌ضرر است).
+ * P2-T11 (درس رگرسیون seed): ردیف ScheduledJob هم ensure می‌شود — seed پایه deleteMany می‌زند و
+ * فقط ۳ کار builtin را می‌سازد؛ بدون این، کارهای ماژولی (deadline-reminder) بعد از هر seed
+ * «۴۰۴ یافت نشد» می‌شوند. update={} یعنی تنظیم ادمین (enabled/interval) هرگز بازنویسی نمی‌شود.
+ */
+export function registerJobRunner(key: string, runner: JobRunner, rowDef?: JobRowDef): void {
   RUNNERS.set(key, runner)
+  const def = rowDef ?? JOB_ROW_DEFS.get(key)
+  if (!def) return
+  JOB_ROW_DEFS.set(key, def)
+  void ensureJobRow(key, def)
+}
+
+async function ensureJobRow(key: string, def: JobRowDef): Promise<void> {
+  if (ENSURED.has(key)) return
+  ENSURED.add(key)
+  try {
+    await db.scheduledJob.upsert({
+      where: { key },
+      create: { key, name: def.name, intervalSec: def.intervalSec, enabled: true, ...(def.note ? { note: def.note } : {}) },
+      update: {},
+    })
+  } catch {
+    // DB هنوز بالا نیامده (بوت زودهنگام) — دوباره تلاش شود (دفع بعدی بارگذاری/فراخوانی)
+    ENSURED.delete(key)
+  }
 }
 
 const builtinRunners: Record<string, JobRunner> = {
@@ -65,8 +99,9 @@ for (const [key, runner] of Object.entries(builtinRunners)) registerJobRunner(ke
 
 // کارهای ماژولی (P2-T11) — ثبت ایستا در زمان بارگذاری؛ مستقل از اجرای مجدد instrumentation
 // (بدون حلقه import: ماژول job فقط از core/shared و core/notifications وارد می‌کند)
+// ردیف DB با ensure خودکار ساخته می‌شود (درس رگرسیون seed — بالا)
 import { runDeadlineReminder } from './jobs/deadline-reminder'
-registerJobRunner('deadline-reminder', runDeadlineReminder)
+registerJobRunner('deadline-reminder', runDeadlineReminder, { name: 'یادآور مهلت نامه‌ها', intervalSec: 3600, note: '۳ روز قبل و روز موعد — بسته P2-T11' })
 
 export function startScheduler(): void {
   if (g.__ideaoneSchedulerStarted) return // محافظ در برابر اجرای دوباره (HMR/بوت چندباره)
@@ -122,8 +157,20 @@ async function runDueJobs(): Promise<void> {
  * مصرف‌کننده: اجرای دستی ادمین از حاکمیت (POST /api/platform/jobs/run) و تست‌های E2E.
  */
 export async function runJobOnce(key: string): Promise<{ ok: true; note: string } | { ok: false; error: string; status: number }> {
-  const def = await db.scheduledJob.findUnique({ where: { key } })
-  if (!def) return { ok: false, error: 'کار زمان‌بندی با این کلید یافت نشد', status: 404 }
+  let def = await db.scheduledJob.findUnique({ where: { key } })
+  if (!def) {
+    // رگرسیون seed (P2-T11): ردیف حذف شده ولی runner/تعریف موجود است — همین‌جا بساز (idempotent)
+    const rowDef = JOB_ROW_DEFS.get(key)
+    if (rowDef) {
+      await db.scheduledJob.upsert({
+        where: { key },
+        create: { key, name: rowDef.name, intervalSec: rowDef.intervalSec, enabled: true, ...(rowDef.note ? { note: rowDef.note } : {}) },
+        update: {},
+      }).catch(() => {})
+      def = await db.scheduledJob.findUnique({ where: { key } })
+    }
+    if (!def) return { ok: false, error: 'کار زمان‌بندی با این کلید یافت نشد', status: 404 }
+  }
   if (!def.enabled) return { ok: false, error: 'این کار غیرفعال است — ابتدا از حاکمیت فعالش کنید', status: 409 }
   const runner = RUNNERS.get(key)
   if (!runner) return { ok: false, error: 'runner تعریف‌شده‌ای برای این کلید وجود ندارد', status: 404 }

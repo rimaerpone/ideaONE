@@ -1,7 +1,9 @@
 import 'server-only'
 import { db } from '@/core/shared/db'
 import { notify } from '@/core/notifications/notify'
-import { formatJalali, faDocNumber, faDigits } from '@/core/shared/jalali'
+import { formatJalali, faDigits } from '@/core/shared/jalali'
+import { formatLetterDisplayNumber, DEFAULT_LETTER_NUMBERING } from '@/core/shared/numbering'
+import { getLetterNumberings } from '@/core/shared/server-helpers'
 
 /**
  * P2-T11 — یادآور خودکار مهلت اقدام نامه (کار زمان‌بند ماژولی «deadline-reminder»)
@@ -49,6 +51,9 @@ export async function runDeadlineReminder(now = new Date()): Promise<string> {
       createdAt: true,
       deadlineAt: true,
       currentHolderId: true,
+      // P2-T8 — برای شماره نمایشی یادآور (پیشوند/پسوند per-type شرکت خودِ نامه)
+      companyId: true,
+      type: true,
     },
     orderBy: { id: 'asc' },
   })
@@ -69,6 +74,9 @@ export async function runDeadlineReminder(now = new Date()): Promise<string> {
     if (!cur || rf.createdAt >= cur.createdAt) lastByLetter.set(rf.letterId, rf)
   }
 
+  // P2-T8 — شماره نمایشی یادآور با پیکربندی شرکتِ خودِ نامه (یک پرس‌وجو برای همه)
+  const numbering = await getLetterNumberings([...new Set(letters.map((l) => l.companyId))])
+
   let dueCount = 0
   let soonCount = 0
   for (const l of letters) {
@@ -87,7 +95,7 @@ export async function runDeadlineReminder(now = new Date()): Promise<string> {
     else if (daysLeft >= 1 && daysLeft <= 3) milestone = 'T3' // ۳ روز قبل (پنجره ۱..۳ روز مانده)
     else continue // گذشته از موعد (T12 «معطل‌ها» دامنه جداست) یا دورتر از پنجره
 
-    const label = faDocNumber(l.number, l.createdAt)
+    const label = formatLetterDisplayNumber(l.number, l.createdAt, l.type, numbering.get(l.companyId) ?? DEFAULT_LETTER_NUMBERING)
     const sent = await notify({
       userId: l.currentHolderId!,
       title: milestone === 'DUE' ? 'مهلت اقدام نامه: امروز' : 'مهلت اقدام نامه نزدیک است',

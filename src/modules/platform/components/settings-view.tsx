@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '@/store/app'
 import { apiGet, apiPost, apiDownload } from '@/core/shared/api-client'
-import type { AuditData, AuditLogItem, GovernanceData, SecurityData, WeeklyReportData } from '@/types/platform'
+import type { AuditData, AuditLogItem, GovernanceData, SecurityData, WeeklyReportData, LetterNumberingConfig } from '@/types/platform'
+import { LETTER_NUMBERING_TYPES } from '@/types/platform'
+// P2-T8 (R9) — شماره‌گذاری نامه: ماژول خالص (بدون db/server-only) — امن برای کلاینت
+import { parseLetterNumbering, serializeLetterNumbering, formatLetterDisplayNumber, LETTER_NUMBERING_MAX_AFFIX, DEFAULT_LETTER_NUMBERING } from '@/core/shared/numbering'
 import { PageHeader, LoadingState, EmptyState } from '@/components/common/ui-bits'
 import { useAuditLogsQuery } from '@/modules/platform/queries'
 import { DataGrid, type DataGridColumn } from '@/components/common/data-grid'
@@ -15,12 +18,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
-import { Activity, Radio, Flag, Plug, ShieldAlert, Download, FilterX, Loader2, Building2, TriangleAlert, X, RotateCcw, Printer, Play, ClipboardCopy, FileText } from 'lucide-react'
+import { Activity, Radio, Flag, Plug, ShieldAlert, Download, FilterX, Loader2, Building2, TriangleAlert, X, RotateCcw, Printer, Play, ClipboardCopy, FileText, Hash } from 'lucide-react'
 import { formatJalali, faDigits, faNumber, parseJalaliInput, toJalaliInputString } from '@/core/shared/jalali'
 import { actionLabelFa, ACTION_FA } from '@/core/shared/audit-labels'
 import { parseNumericInput } from '@/core/shared/normalize'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { LETTER_TYPE_LABELS } from '@/components/common/ui-bits'
 import { toastOk, toastErr } from '@/hooks/use-toast'
 
 const KIND_FA: Record<string, string> = {
@@ -38,7 +42,7 @@ const CATEGORY_FA: Record<string, string> = { OPERATIONAL: 'عملیاتی', MAN
 type Tab = 'company' | 'security' | 'audit' | 'events' | 'flags' | 'integrations'
 
 type CompanySettingsData = {
-  settings: { 'requests.visibility': 'ALL' | 'SELF_MANAGERS'; 'requests.notifyCeilingM2': string; 'letterhead.subtitle': string; 'letterhead.footer': string }
+  settings: { 'requests.visibility': 'ALL' | 'SELF_MANAGERS'; 'requests.notifyCeilingM2': string; 'letterhead.subtitle': string; 'letterhead.footer': string; 'letters.numbering': string }
   companyName: string | null
 }
 
@@ -56,6 +60,9 @@ export function SettingsView() {
   const [lhSubtitleDraft, setLhSubtitleDraft] = useState('')
   const [lhFooterDraft, setLhFooterDraft] = useState('')
   const [lhErr, setLhErr] = useState<string | null>(null)
+  // P2-T8 (R9) — پیش‌نویس شماره‌گذاری نامه (کل پیکربندی، یک کلید ذخیره)
+  const [numDraft, setNumDraft] = useState<LetterNumberingConfig>(() => structuredClone(DEFAULT_LETTER_NUMBERING))
+  const [numErr, setNumErr] = useState<string | null>(null)
   // بررسی عمیق فرم‌ها — ۱۴۰۵/۰۶: خطای inline زیر فیلد سقف (نه فقط toast)
   const [ceilingErr, setCeilingErr] = useState<string | null>(null)
 
@@ -144,6 +151,8 @@ export function SettingsView() {
         setCeilingDraft(String(Number(d.settings['requests.notifyCeilingM2']) || 0))
         setLhSubtitleDraft(d.settings['letterhead.subtitle'] ?? '')
         setLhFooterDraft(d.settings['letterhead.footer'] ?? '')
+        // P2-T8 (R9) — پیکربندی شماره‌گذاری؛ غیبت/خرابی = پیش‌فرض (parse سخت‌گیر)
+        setNumDraft(parseLetterNumbering(d.settings['letters.numbering']))
       })
       .catch(() => setCompanyCfg(null))
   }, [])
@@ -198,6 +207,34 @@ export function SettingsView() {
     } finally {
       setBusySetting(null)
     }
+  }
+
+  // P2-T8 (R9) — ذخیره شماره‌گذاری نامه: اعتبارسنجی آینه سرور + ذخیرهٔ «خالی» برای پیکربندی پیش‌فرض
+  const numSaved = useMemo<LetterNumberingConfig | null>(
+    () => (companyCfg ? parseLetterNumbering(companyCfg.settings['letters.numbering']) : null),
+    [companyCfg],
+  )
+  const numDirty = !!numSaved && serializeLetterNumbering(numDraft) !== serializeLetterNumbering(numSaved)
+  const saveLetterNumbering = () => {
+    // اعتبارسنجی کلاینت (آینه validateLetterNumberingValue سرور — خطای فارسی یکسان)
+    for (const t of LETTER_NUMBERING_TYPES) {
+      for (const k of ['prefix', 'suffix'] as const) {
+        const v = numDraft.types[t][k].trim()
+        if (v.length > LETTER_NUMBERING_MAX_AFFIX) {
+          setNumErr(`${k === 'prefix' ? 'پیشوند' : 'پسوند'} ${LETTER_TYPE_LABELS[t]} حداکثر ${faDigits(LETTER_NUMBERING_MAX_AFFIX)} نویسه است`)
+          return
+        }
+        if (/[\r\n\t]/.test(v)) {
+          setNumErr(`${k === 'prefix' ? 'پیشوند' : 'پسوند'} ${LETTER_TYPE_LABELS[t]} نباید نویسه کنترلی داشته باشد`)
+          return
+        }
+      }
+    }
+    setNumErr(null)
+    // پیش‌فرض = حذف تنظیم (مقدار خالی) — سری مشترک بدون پیشوند/پسوند، مثل روز اول
+    const isDefault = !numDraft.separateByType && LETTER_NUMBERING_TYPES.every((t) => !numDraft.types[t].prefix.trim() && !numDraft.types[t].suffix.trim())
+    const value = isDefault ? '' : serializeLetterNumbering(numDraft)
+    void saveCompanySetting('letters.numbering', value, isDefault ? 'شماره‌گذاری به پیش‌فرض بازگشت' : 'شماره‌گذاری نامه ذخیره شد')
   }
 
   const toggleFlag = async (key: string, enabled: boolean) => {
@@ -562,6 +599,89 @@ export function SettingsView() {
                       title="بازگردانی به مقدار ذخیره‌شده"
                       disabled={busySetting === 'letterhead'}
                       onClick={() => { setLhSubtitleDraft(companyCfg.settings['letterhead.subtitle'] ?? ''); setLhFooterDraft(companyCfg.settings['letterhead.footer'] ?? ''); setLhErr(null) }}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* P2-T8 (R9) — شماره‌گذاری نامه per-type: سری جدا + پیشوند/پسوند */}
+            <Card>
+              <CardContent className="flex flex-col gap-3 p-4">
+                <div className="flex items-center gap-2">
+                  <Hash className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-bold">شماره‌گذاری نامه‌ها</p>
+                </div>
+                <p className="text-xs leading-6 text-muted-foreground">
+                  قالب شماره نمایشی نامه‌های این شرکت: «پیشوند + سال جلالی/شماره + پسوند» (مثل «و ۱۴۰۵/۴۲ م»).
+                  با گزینه «سری جداگانه»، شماره وارده/صادره/داخلی هرکدام سریِ خود را می‌گیرند (شماره ۴۲ وارده دیگر با ۴۲ صادره برخورد نمی‌کند).
+                  پیش‌فرض هر دو خاموش است: یک سری سالانه مشترک بدون پیشوند/پسوند — مثل رفتار همیشگی.
+                </p>
+                <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="letters-separate" className="text-xs">سری شماره جداگانه برای هر نوع نامه</Label>
+                    <p className="text-[11px] leading-4 text-muted-foreground">
+                      {numDraft.separateByType ? 'فعال: وارده «LETTER:INCOMING»، صادره «LETTER:OUTGOING»، داخلی «LETTER:INTERNAL» — سه شمارنده مستقل' : 'خاموش: همه انواع یک سری مشترک سالانه (LETTER) — رفتار پیش‌فرض'}
+                    </p>
+                  </div>
+                  <Switch
+                    id="letters-separate"
+                    checked={numDraft.separateByType}
+                    disabled={busySetting === 'letters.numbering'}
+                    onCheckedChange={(v) => { setNumDraft((d) => ({ ...d, separateByType: v })); if (numErr) setNumErr(null) }}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {LETTER_NUMBERING_TYPES.map((t) => (
+                    <div key={t} className="space-y-2 rounded-lg border p-3" data-testid={`letter-numbering-${t}`}>
+                      <p className="text-xs font-bold">{LETTER_TYPE_LABELS[t]}</p>
+                      <div className="space-y-1">
+                        <Label htmlFor={`num-prefix-${t}`} className="text-[11px] text-muted-foreground">پیشوند (اختیاری)</Label>
+                        <Input
+                          id={`num-prefix-${t}`}
+                          placeholder="مثلاً: و"
+                          maxLength={LETTER_NUMBERING_MAX_AFFIX}
+                          value={numDraft.types[t].prefix}
+                          disabled={busySetting === 'letters.numbering'}
+                          onChange={(e) => { setNumDraft((d) => ({ ...d, types: { ...d.types, [t]: { ...d.types[t], prefix: e.target.value } } })); if (numErr) setNumErr(null) }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`num-suffix-${t}`} className="text-[11px] text-muted-foreground">پسوند (اختیاری)</Label>
+                        <Input
+                          id={`num-suffix-${t}`}
+                          placeholder="مثلاً: م"
+                          maxLength={LETTER_NUMBERING_MAX_AFFIX}
+                          value={numDraft.types[t].suffix}
+                          disabled={busySetting === 'letters.numbering'}
+                          onChange={(e) => { setNumDraft((d) => ({ ...d, types: { ...d.types, [t]: { ...d.types[t], suffix: e.target.value } } })); if (numErr) setNumErr(null) }}
+                        />
+                      </div>
+                      <p className="text-[11px] font-medium leading-5 text-primary" aria-live="polite" dir="rtl">
+                        نمونه: {formatLetterDisplayNumber(42, new Date().toISOString(), t, numDraft)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {numErr ? <p className="text-xs font-medium text-destructive" role="alert">{numErr}</p> : null}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={busySetting === 'letters.numbering' || !numDirty}
+                    onClick={saveLetterNumbering}
+                  >
+                    {busySetting === 'letters.numbering' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'ذخیره شماره‌گذاری'}
+                  </Button>
+                  {numDirty && numSaved ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="بازگردانی شماره‌گذاری به مقدار ذخیره‌شده"
+                      title="بازگردانی به مقدار ذخیره‌شده"
+                      disabled={busySetting === 'letters.numbering'}
+                      onClick={() => { setNumDraft(structuredClone(numSaved)); setNumErr(null) }}
                     >
                       <RotateCcw className="h-4 w-4" />
                     </Button>

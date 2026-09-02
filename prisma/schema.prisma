@@ -345,16 +345,21 @@ model Letter {
   creator         User      @relation("LetterCreator", fields: [creatorId], references: [id])
   aiCategory      String? // طبقه‌بندی هوش مصنوعی (پس از تأیید انسانی HITL)
   aiSummary       String? // خلاصه هوش مصنوعی (پس از تأیید انسانی HITL)
+  // P2-T9 — عطف نامه: نامه‌ای که این نامه به آن وابسته است (تک‌والد؛ دوسویه از سمت relatedFrom)
+  relationLetterId String?
+  relationLetter   Letter?  @relation("LetterRelations", fields: [relationLetterId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  referrals LetterReferral[]
+  referrals  LetterReferral[]
+  relatedFrom Letter[]        @relation("LetterRelations")
 
   // P1-T11 — نمایه‌های مسیرهای داغ (فهرست‌ها + شمارش‌های داشبورد)
   @@index([companyId, createdAt]) // فهرست اصلی: دامنه شرکت + جدیدترین
   @@index([companyId, status]) // فیلتر وضعیت + شمارش داشبورد
   @@index([currentHolderId, status]) // کارتابل من (inbox)
   @@index([creatorId, createdAt]) // صادره‌های من
+  @@index([relationLetterId]) // P2-T9 — یافتن نامه‌های عطف‌شده (children) در زنجیره
 }
 
 model LetterReferral {

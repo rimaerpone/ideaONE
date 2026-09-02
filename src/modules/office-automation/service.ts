@@ -1,7 +1,9 @@
 import 'server-only'
 import { db } from '@/core/shared/db'
 import type { SessionContext } from '@/core/auth/auth'
-import { nextDocNumber } from '@/core/shared/server-helpers'
+import { nextDocNumber, getLetterNumbering, getLetterNumberings } from '@/core/shared/server-helpers'
+import { letterCounterScope, formatLetterDisplayNumber, DEFAULT_LETTER_NUMBERING as DEFAULT_NUMBERING } from '@/core/shared/numbering'
+import type { LetterNumberingConfig } from '@/types/platform'
 import { scopeCompanyIds, requireWriteRole, requireSettingsAdmin } from '@/core/tenancy/tenancy'
 import { getLetterhead } from '@/core/tenancy/company-settings'
 import { emitEvent } from '@/core/events/outbox'
@@ -44,6 +46,7 @@ const LETTER_LIST_INCLUDE = {
 type LetterListRow = {
   id: string
   number: number
+  companyId: string
   type: string
   subject: string
   status: string
@@ -62,10 +65,12 @@ type LetterListRow = {
 }
 
 /** نگاشت مشترک ردیف Letter → قلم فهرست (هر دو مسیر جستجو یکسان) */
-function mapLetterItem(l: LetterListRow, ctx: SessionContext) {
+function mapLetterItem(l: LetterListRow, ctx: SessionContext, numbering: Map<string, LetterNumberingConfig>) {
   return {
     id: l.id,
     number: l.number,
+    // P2-T8 — شماره نمایشی سرورساخته با پیکربندی شرکت خودِ نامه (قالب واحد همه نماها)
+    displayNumber: formatLetterDisplayNumber(l.number, l.createdAt, l.type, numbering.get(l.companyId) ?? DEFAULT_NUMBERING),
     type: l.type,
     subject: l.subject,
     status: l.status,
@@ -102,6 +107,8 @@ export async function listLetters(
   const scopeIds = await scopeCompanyIds(ctx)
   const q = lq.q
   const box = lq.filters.box // inbox | sent | all
+  // P2-T8 — پیکربندی شماره‌گذاری همه شرکت‌های دامنه در یک پرس‌وجو (هر نامه با شرکت خودش)
+  const numbering = await getLetterNumberings(scopeIds)
 
   // P2-T5 — جستجوی تمام‌متن FTS5 نرمال‌شده (subject/body/sender/receiver + شماره نمایشی «سال/شماره»)
   // عقب‌گرد contains: پرس‌وجو توکن معتبر ندارد (تک‌نویسه/نماد)، ensure شکست خورد یا MATCH خطا داد.
@@ -130,7 +137,7 @@ export async function listLetters(
             ? await db.letter.findMany({ where: { id: { in: ids } }, include: LETTER_LIST_INCLUDE })
             : []
           const byId = new Map(rows.map((l) => [l.id, l] as const))
-          const items = ids.map((id) => byId.get(id)).filter((l) => l !== undefined).map((l) => mapLetterItem(l, ctx))
+          const items = ids.map((id) => byId.get(id)).filter((l) => l !== undefined).map((l) => mapLetterItem(l, ctx, numbering))
           return { ok: true, data: listEnvelope(items, total, lq.page, lq.pageSize) }
         } catch {
           // عقب‌گرد contains — جستجو هرگز نمی‌شکند
@@ -162,7 +169,7 @@ export async function listLetters(
   ])
   return {
     ok: true,
-    data: listEnvelope(rows.map((l) => mapLetterItem(l, ctx)), total, lq.page, lq.pageSize),
+    data: listEnvelope(rows.map((l) => mapLetterItem(l, ctx, numbering)), total, lq.page, lq.pageSize),
   }
 }
 
@@ -192,6 +199,7 @@ export async function exportLettersCsv(ctx: SessionContext, lq: ParsedListQuery)
   type CsvRow = {
     number: number
     type: string
+    companyId: string
     subject: string
     status: string
     senderTitle: string | null
@@ -204,8 +212,10 @@ export async function exportLettersCsv(ctx: SessionContext, lq: ParsedListQuery)
     currentHolder: { fullName: string } | null
     company: { name: string }
   }
+  // P2-T8 — شماره نمایشی در CSV هم قالب واحد دارد (پیکربندی شرکت خودِ ردیف)
+  const csvNumbering = await getLetterNumberings(scopeIds)
   const csvRow = (l: CsvRow) => [
-    l.number,
+    formatLetterDisplayNumber(l.number, l.createdAt, l.type, csvNumbering.get(l.companyId) ?? DEFAULT_NUMBERING),
     LETTER_TYPE_FA[l.type] ?? l.type,
     l.subject,
     LETTER_STATUS_FA[l.status] ?? l.status,
@@ -419,6 +429,24 @@ export async function buildCartableWeeklyReport(
 }
 
 // ---------- جزئیات ----------
+// P2-T9 — دامنهٔ زنجیره عطف: اجداد تا این حد بالا می‌روند (نمایش «زنجیره ۵ سطحی») و
+// اعمال عطفی که زنجیره عمیق‌تر از این بسازد رد می‌شود تا زنجیره همیشه کامل دیده شود.
+const RELATION_CHAIN_MAX = 5
+
+/** نگاشت ردیف نامه → عنصر زنجیره (شماره نمایشی با پیکربندی شرکت خودش) */
+type RelationRow = { id: string; number: number; type: string; subject: string; status: string; createdAt: Date; relationLetterId: string | null }
+function mapRelationItem(l: RelationRow, cfg: LetterNumberingConfig) {
+  return {
+    id: l.id,
+    number: l.number,
+    displayNumber: formatLetterDisplayNumber(l.number, l.createdAt, l.type, cfg),
+    subject: l.subject,
+    type: l.type,
+    status: l.status,
+    createdAt: l.createdAt,
+  }
+}
+
 export async function getLetter(ctx: SessionContext, id: string): Promise<ServiceResult<{ letter: unknown }>> {
   const scopeIds = await scopeCompanyIds(ctx)
   const letter = await db.letter.findFirst({
@@ -427,6 +455,8 @@ export async function getLetter(ctx: SessionContext, id: string): Promise<Servic
       creator: { select: { fullName: true, jobTitle: true, id: true } },
       currentHolder: { select: { fullName: true, jobTitle: true, id: true } },
       company: { select: { name: true, code: true, legalName: true } },
+      // P2-T9 — والد مستقیم (سطح اول زنجیره)
+      relationLetter: { select: { id: true, number: true, type: true, subject: true, status: true, createdAt: true, relationLetterId: true } },
       referrals: {
         orderBy: { createdAt: 'asc' },
         include: {
@@ -443,6 +473,32 @@ export async function getLetter(ctx: SessionContext, id: string): Promise<Servic
   const attachmentsCount = await db.attachment.count({ where: { entityType: 'letter', entityId: letter.id } })
   // P2.5-U7 / P2-T7 — سربرگ چاپ per-company: از شرکت خودِ نامه (نه شرکت فعال ناظر)
   const letterhead = await getLetterhead(letter.companyId)
+  // P2-T8 — شماره نمایشی + پیکربندی شرکت خودِ نامه برای کل زنجیره (زنجیره هم‌شرکتی است)
+  const numberingCfg = await getLetterNumbering(letter.companyId)
+
+  // P2-T9 — زنجیره اجداد (ریشه اول → والد مستقیم؛ حداکثر ۵ سطح) با پیمایش والد
+  const chainRows: RelationRow[] = []
+  {
+    let cur = letter.relationLetter
+    let depth = 0
+    while (cur && depth < RELATION_CHAIN_MAX) {
+      chainRows.unshift(cur)
+      if (!cur.relationLetterId) break
+      const parent: RelationRow | null = cur.relationLetterId
+        ? await db.letter.findUnique({ where: { id: cur.relationLetterId }, select: { id: true, number: true, type: true, subject: true, status: true, createdAt: true, relationLetterId: true } })
+        : null
+      if (!parent) break
+      cur = parent
+      depth += 1
+    }
+  }
+  // نامه‌های عطف‌شده به این نامه (فرزندان — سمت دوم رابطه دوسویه)
+  const relationChildren = await db.letter.findMany({
+    where: { relationLetterId: letter.id },
+    orderBy: { createdAt: 'asc' },
+    take: 200,
+    select: { id: true, number: true, type: true, subject: true, status: true, createdAt: true, relationLetterId: true },
+  })
 
   return {
     ok: true,
@@ -450,6 +506,8 @@ export async function getLetter(ctx: SessionContext, id: string): Promise<Servic
       letter: {
         id: letter.id,
         number: letter.number,
+        // P2-T8 — شماره نمایشی سرورساخته (نشان رکورد/پیش‌نمایش/چاپ/توست — قالب واحد)
+        displayNumber: formatLetterDisplayNumber(letter.number, letter.createdAt, letter.type, numberingCfg),
         type: letter.type,
         subject: letter.subject,
         body: letter.body,
@@ -473,6 +531,10 @@ export async function getLetter(ctx: SessionContext, id: string): Promise<Servic
         aiCategory: letter.aiCategory,
         aiSummary: letter.aiSummary,
         attachmentsCount,
+        // P2-T9 — عطف دوسویه: والد مستقیم + زنجیره اجداد (۵ سطح) + نامه‌های عطف‌شده به این نامه
+        relation: letter.relationLetter ? mapRelationItem(letter.relationLetter, numberingCfg) : null,
+        relationChain: chainRows.map((r) => mapRelationItem(r, numberingCfg)),
+        relationChildren: relationChildren.map((r) => mapRelationItem(r, numberingCfg)),
         referrals: letter.referrals.map((rf) => ({
           id: rf.id,
           action: rf.action,
@@ -494,7 +556,7 @@ export async function getLetter(ctx: SessionContext, id: string): Promise<Servic
 export async function createLetter(
   ctx: SessionContext,
   b: Record<string, unknown>,
-): Promise<ServiceResult<{ id: string; number: number }>> {
+): Promise<ServiceResult<{ id: string; number: number; displayNumber: string }>> {
   // P1-T18 — VIEWER هیچ نوشتنی ندارد (ماتریس 04-security §۳)
   const denied = await requireWriteRole(ctx)
   if (denied) return fail(denied, 403)
@@ -502,10 +564,35 @@ export async function createLetter(
   const company = await db.company.findUnique({ where: { id: ctx.companyId } })
   if (company?.type === 'GROUP') return fail('برای ثبت نامه، ابتدا به یک شرکت عملیاتی سوئیچ کنید')
 
-  const { type, subject, body, senderTitle, receiverTitle, confidentiality, urgency, deadlineAt, referTo } = b as Record<string, string>
+  const { type, subject, body, senderTitle, receiverTitle, confidentiality, urgency, deadlineAt, referTo, relationLetterId } = b as Record<string, string>
   if (!['INCOMING', 'OUTGOING', 'INTERNAL'].includes(type)) return fail('نوع نامه نامعتبر است')
   if (!subject?.trim()) return fail('موضوع نامه الزامی است')
   if (!body?.trim()) return fail('متن نامه الزامی است')
+
+  // P2-T9 — عطف به نامه موجود: باید در همان شرکت فعال باشد (گارد دامنه شرکت)
+  const relationId = relationLetterId?.trim() || null
+  if (relationId) {
+    const target = await db.letter.findFirst({
+      where: { id: relationId, companyId: ctx.companyId },
+      select: { id: true, relationLetterId: true },
+    })
+    if (!target) return fail('نامه عطف‌شده یافت نشد (یا متعلق به شرکت فعال شما نیست)')
+    // سقف عمق زنجیره در ثبت هم اعمال می‌شود (آینه گارد setLetterRelation) — نامه تازه
+    // یک سطح اضافه می‌کند؛ اگر اجداد هدف از پیش ۵ سطح‌اند، زنجیره نمایش‌ناکامل می‌شد.
+    let cur: { id: string; relationLetterId: string | null } | null = target
+    let ancestors = 1 // خودِ هدف = جد اول نامه تازه
+    while (cur) {
+      if (!cur.relationLetterId) break
+      if (ancestors >= RELATION_CHAIN_MAX) return fail(`زنجیره عطف حداکثر ${faDigits(RELATION_CHAIN_MAX)} سطح است`)
+      const parent = await db.letter.findUnique({
+        where: { id: cur.relationLetterId },
+        select: { id: true, relationLetterId: true },
+      })
+      if (!parent) break
+      cur = parent
+      ancestors += 1
+    }
+  }
 
   // مهلت اقدام (تاریخ جلالی از دیت‌پیکر) — نامعتبر = خطا
   let deadlineValue: Date | null = null
@@ -522,7 +609,9 @@ export async function createLetter(
     toUserId = referTo
   }
 
-  const number = await nextDocNumber(ctx.companyId, 'LETTER')
+  // P2-T8 — سری شماره: مشترک (رفتار فعلی) یا جدا per-type طبق تنظیم شرکت + شماره نمایشی
+  const numberingCfg = await getLetterNumbering(ctx.companyId)
+  const number = await nextDocNumber(ctx.companyId, letterCounterScope(type, numberingCfg))
   const letter = await db.letter.create({
     data: {
       companyId: ctx.companyId,
@@ -538,6 +627,8 @@ export async function createLetter(
       status: toUserId ? 'IN_PROGRESS' : 'DRAFT',
       currentHolderId: toUserId,
       creatorId: ctx.userId,
+      // P2-T9 — عطف نامه تازه به نامه موجود (اعتبارسنجی بالا)
+      relationLetterId: relationId,
       referrals: toUserId
         ? { create: { fromUserId: ctx.userId, toUserId, action: 'REFER', note: 'ثبت و ارجاع اولیه', deadlineAt: deadlineValue } }
         : undefined,
@@ -550,8 +641,88 @@ export async function createLetter(
   // P2-T5 — سینک ایندکس FTS نامه تازه (شکست بی‌صدا؛ خودترمیم ensure شمارش را جبران می‌کند)
   await upsertLetterFts(letter.id)
   await emitEvent('letter.created', { letterId: letter.id, number, type, companyId: ctx.companyId })
-  await audit({ ctx, action: 'CREATE', entity: 'letter', entityId: letter.id, details: { number, type, subject: subject.trim() } })
-  return { ok: true, data: { id: letter.id, number } }
+  await audit({
+    ctx,
+    action: 'CREATE',
+    entity: 'letter',
+    entityId: letter.id,
+    details: { number, type, subject: subject.trim(), ...(relationId ? { relationLetterId: relationId } : {}) },
+  })
+  return {
+    ok: true,
+    data: { id: letter.id, number, displayNumber: formatLetterDisplayNumber(number, letter.createdAt, type, numberingCfg) },
+  }
+}
+
+// ---------- P2-T9 — عطف/ارتباط نامه (دوسویه؛ حلقه و زنجیره > ۵ سطح ممنوع) ----------
+export async function setLetterRelation(
+  ctx: SessionContext,
+  id: string,
+  relationLetterId: string | null,
+): Promise<ServiceResult<{ ok: true }>> {
+  // P1-T18 — VIEWER هیچ نوشتنی ندارد
+  const denied = await requireWriteRole(ctx)
+  if (denied) return fail(denied, 403)
+
+  const scopeIds = await scopeCompanyIds(ctx)
+  const letter = await db.letter.findFirst({
+    where: { id, companyId: { in: scopeIds } },
+    select: { id: true, companyId: true, number: true, currentHolderId: true, creatorId: true, status: true, relationLetterId: true },
+  })
+  if (!letter) return fail('نامه یافت نشد', 404)
+
+  // مالکیت عطف = مالکیت اقدام: دارنده فعلی (در جریان) یا سازندهٔ پیش‌نویس — عطف دادهٔ نامه است نه هر ناظری
+  if (letter.currentHolderId !== ctx.userId && !(letter.status === 'DRAFT' && letter.creatorId === ctx.userId)) {
+    return fail('این نامه در کارتابل شما نیست')
+  }
+
+  const targetId = relationLetterId?.trim() || null
+
+  // حذف عطف — idempotent (بدون عطف قبلی = موفق بی‌عمل)
+  if (!targetId) {
+    if (letter.relationLetterId) {
+      await db.letter.update({ where: { id: letter.id }, data: { relationLetterId: null } })
+      await audit({ ctx, action: 'RELATE', entity: 'letter', entityId: letter.id, details: { number: letter.number, relationLetterId: null, cleared: true } })
+    }
+    return { ok: true, data: { ok: true } }
+  }
+
+  if (targetId === letter.id) return fail('نامه نمی‌تواند به خودش عطف شود')
+
+  // گارد دامنه: هدف باید در همان شرکتِ خودِ نامه باشد (زنجیره هم‌شرکتی؛ ایزولاسیون مستأجر)
+  const target = await db.letter.findFirst({
+    where: { id: targetId, companyId: letter.companyId },
+    select: { id: true, number: true, relationLetterId: true },
+  })
+  if (!target) return fail('نامه عطف‌شده یافت نشد (یا متعلق به شرکت این نامه نیست)')
+
+  // حلقه‌ممنوع + سقف عمق: از هدف به بالا می‌پیماییم — رسیدن به خود نامه = حلقه؛
+  // بیش از ۵ جد = زنجیره عمیق‌تر از حد نمایش. (هر نامه تک‌والد است؛ تنها لبهٔ تازه
+  // letter→target است، پس تنها مسیر ممکنِ حلقه همین زنجیرهٔ اجداد است.)
+  let cur: { id: string; relationLetterId: string | null } | null = target
+  let ancestors = 1 // خودِ هدف = جد اول نامه
+  while (cur) {
+    if (cur.id === letter.id) return fail('این عطف حلقه می‌سازد — نامه به نسلِ خودش عطف نمی‌شود')
+    if (!cur.relationLetterId) break
+    if (ancestors >= RELATION_CHAIN_MAX) return fail(`زنجیره عطف حداکثر ${faDigits(RELATION_CHAIN_MAX)} سطح است`)
+    const parent = await db.letter.findUnique({
+      where: { id: cur.relationLetterId },
+      select: { id: true, relationLetterId: true },
+    })
+    if (!parent) break
+    cur = parent
+    ancestors += 1
+  }
+
+  await db.letter.update({ where: { id: letter.id }, data: { relationLetterId: targetId } })
+  await audit({
+    ctx,
+    action: 'RELATE',
+    entity: 'letter',
+    entityId: letter.id,
+    details: { number: letter.number, relationLetterId: targetId, relationNumber: target.number },
+  })
+  return { ok: true, data: { ok: true } }
 }
 
 // ---------- اقدام: ارجاع/پاسخ/تأیید/بایگانی ----------

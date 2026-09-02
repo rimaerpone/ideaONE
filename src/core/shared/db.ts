@@ -8,7 +8,7 @@ import { PrismaClient } from '@prisma/client'
  * `dedupKey` در فرایند devِ باز). با mismatch نسخه، نمونه قدیمی disconnect و دور
  * انداخته می‌شود و ماژول تازه‌ارزیابی‌شده کلاینتِ تازه‌ تولیدشده می‌سازد.
  */
-const PRISMA_GEN = 'gen-2026-09-02-p05-t3-loginattempt' // بامپ پس از افزودن LoginAttempt (P0.5-T3 — CREATE مستقیم)
+const PRISMA_GEN = 'gen-2026-09-02-p2-t9-letter-relation' // بامپ پس از relationLetterId (R9/P2-T9 — عطف دوسویه)
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined

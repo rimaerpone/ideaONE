@@ -53,7 +53,8 @@ function LetterPreviewBody({ letter, attachmentsCount }: { letter: LetterDetail;
 
       <PreviewInfo
         rows={[
-          { label: 'شماره', value: faDocNumber(letter.number, letter.createdAt) },
+          // P2-T8 — قالب واحد شماره نمایشی سرورساخته (پیشوند/پسوند per-type)
+          { label: 'شماره', value: letter.displayNumber || faDocNumber(letter.number, letter.createdAt) },
           { label: 'تاریخ ثبت', value: formatJalali(letter.createdAt) },
           { label: letter.type === 'INCOMING' ? 'فرستنده' : letter.type === 'OUTGOING' ? 'گیرنده' : 'ثبت‌کننده', value: letter.type === 'INCOMING' ? (letter.senderTitle ?? '—') : letter.type === 'OUTGOING' ? (letter.receiverTitle ?? '—') : letter.creatorName },
           { label: 'در کارتابل', value: letter.holderName ?? '—' },

@@ -29,6 +29,8 @@
  */
 import { faSearchTokens, normalizeFaText } from '@/core/shared/normalize'
 import { faDocNumber } from '@/core/shared/jalali'
+import { parseLetterNumbering, formatLetterDisplayNumber, LETTER_NUMBERING_KEY } from '@/core/shared/numbering'
+import type { LetterNumberingConfig } from '@/types/platform'
 
 /**
  * نمای حداقلی کلاینت دیتابیس برای این ماژول مشترک — بدون ایمپورت مستقیم بسته Prisma:
@@ -41,6 +43,10 @@ export type FtsDbClient = {
   letter: {
     findMany(args?: unknown): Promise<LetterFtsRow[]>
     findUnique(args?: unknown): Promise<LetterFtsRow | null>
+  }
+  // P2-T8 — پیکربندی شماره‌گذاری برای numText ایندکس (سرور و seed هر دو CompanySetting دارند)
+  companySetting: {
+    findMany(args?: unknown): Promise<{ companyId: string; value: string }[]>
   }
 }
 
@@ -71,6 +77,8 @@ export const LETTER_FTS_GIN_DDL = 'CREATE INDEX IF NOT EXISTS letter_fts_gin ON 
 /** ستون‌های انتخابی Letter که ایندکس از آن‌ها ساخته می‌شود */
 export const LETTER_FTS_SELECT = {
   id: true, subject: true, body: true, senderTitle: true, receiverTitle: true, number: true, createdAt: true,
+  // P2-T8 — برای شماره نمایشی per-type (پیشوند/پسوند شرکت خودِ نامه)
+  companyId: true, type: true,
 } as const
 
 export type LetterFtsRow = {
@@ -81,18 +89,30 @@ export type LetterFtsRow = {
   receiverTitle: string | null
   number: number
   createdAt: Date
+  companyId: string
+  type: string
 }
 
-/** ردیف ایندکس از رکورد Letter — numText = شماره نمایشی «سال/شماره» نرمال‌شده با ارقام لاتین و «/»→فاصله (توکن‌پذیر) */
-export function letterFtsValues(l: LetterFtsRow): (string | number)[] {
+/** ردیف ایندکس از رکورد Letter — numText = شماره نمایشی نرمال‌شده با ارقام لاتین و «/»→فاصله (توکن‌پذیر)
+ * P2-T8: پیکربندی شرکت خودِ نامه (پیشوند/پسوند) هم داخل numText می‌آید تا جستجوی «و ۱۴۰۵/۴۲» برسد. */
+export function letterFtsValues(l: LetterFtsRow, numbering: Map<string, LetterNumberingConfig>): (string | number)[] {
   return [
     l.id,
     normalizeFaText(l.subject ?? ''),
     normalizeFaText(l.body ?? ''),
     normalizeFaText(l.senderTitle ?? ''),
     normalizeFaText(l.receiverTitle ?? ''),
-    normalizeFaText(faDocNumber(l.number, l.createdAt)).replace(/\//g, ' '),
+    normalizeFaText(formatLetterDisplayNumber(l.number, l.createdAt, l.type, numbering.get(l.companyId) ?? parseLetterNumbering(null))).replace(/\//g, ' '),
   ]
+}
+
+/** پیکربندی شماره‌گذاری شرکت‌های درگیر در یک پرس‌وجو — برای rebuild/upsert */
+async function loadFtsNumbering(db: FtsDbClient, companyIds?: string[]): Promise<Map<string, LetterNumberingConfig>> {
+  const rows = await db.companySetting.findMany({
+    where: { key: LETTER_NUMBERING_KEY, ...(companyIds ? { companyId: { in: companyIds } } : {}) },
+    select: { companyId: true, value: true },
+  })
+  return new Map(rows.map((r) => [r.companyId, parseLetterNumbering(r.value)]))
 }
 
 // ---------- پرس‌وجو tsquery (واژه ≥۲ نویسه · حرف پیشوند :* · رقم دقیق) ----------
@@ -236,6 +256,8 @@ export async function rebuildLetterFtsWith(db: FtsDbClient): Promise<number> {
   await db.$executeRawUnsafe(LETTER_FTS_DDL)
   await db.$executeRawUnsafe(LETTER_FTS_GIN_DDL)
   await db.$executeRawUnsafe('DELETE FROM letter_fts')
+  // P2-T8 — همه پیکربندی‌های شماره‌گذاری در یک پرس‌وجو (numText هر نامه با شرکت خودش)
+  const numbering = await loadFtsNumbering(db)
   const BATCH = 500
   let cursor: string | undefined
   let total = 0
@@ -250,7 +272,7 @@ export async function rebuildLetterFtsWith(db: FtsDbClient): Promise<number> {
     const ph = rows.map((_, i) => `(${[0, 1, 2, 3, 4, 5].map((c) => `$${i * 6 + c + 1}`).join(', ')})`).join(', ')
     await db.$executeRawUnsafe(
       `INSERT INTO letter_fts ("letterId", subject, body, sender, receiver, "numText") VALUES ${ph}`,
-      ...rows.flatMap((r) => letterFtsValues(r)),
+      ...rows.flatMap((r) => letterFtsValues(r, numbering)),
     )
     total += rows.length
     cursor = rows[rows.length - 1].id
@@ -269,9 +291,11 @@ export async function upsertLetterFtsWith(db: FtsDbClient, letterId: string): Pr
     await db.$executeRawUnsafe(LETTER_FTS_DDL)
     await db.$executeRawUnsafe('DELETE FROM letter_fts WHERE "letterId" = $1', letterId)
     if (l) {
+      // P2-T8 — پیکربندی شرکت خودِ نامه (unique-index؛ یک پرس‌وجوی ارزان)
+      const numbering = await loadFtsNumbering(db, [l.companyId])
       await db.$executeRawUnsafe(
         'INSERT INTO letter_fts ("letterId", subject, body, sender, receiver, "numText") VALUES ($1, $2, $3, $4, $5, $6)',
-        ...letterFtsValues(l),
+        ...letterFtsValues(l, numbering),
       )
     }
     return true

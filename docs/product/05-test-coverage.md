@@ -23,6 +23,7 @@
 | test-login-security.ts | fetch-e2e | نرخ ورود + سجل LOGIN_FAILED + ایزولاسیون کلید | ۱۷ | `bunx tsx scripts/test-login-security.ts` | 🟢 در CI (`e2e`) |
 | test-rbac.ts | fetch-e2e | RBAC دو لایه + گارد ماژول (T28) + CSV | ۱۰۳ | `bunx tsx scripts/test-rbac.ts` | 🟢 (اصلاح کد رجیستری CMD-011 در P0.5-T3) |
 | test-t4-t6-letters-v2.ts | fetch-e2e | متن پاسخ نامه + قالب شماره + جستجو | ۱۳ | `bunx tsx scripts/test-t4-t6-letters-v2.ts` | 🟢 |
+| test-r9-numbering-relation.ts | fetch+db | **شماره‌گذاری per-type (۱۴: پیش‌فرض/سری جدا/affix/DocCounter scope/اعتبارسنجی/مقاومت خرابی/بازنشانی) + عطف دوسویه (۱۷: دوسویه/زنجیره/حذف idempotent/خودارجاع/حلقه/عمق ۵/ایزولاسیون/مالکیت/VIEWER/سجل RELATE)** (P2-T8/T9 — R9) | ۳۱ | `bun scripts/test-r9-numbering-relation.ts` | 🟢 **سبز کامل ۱۴۰۵/۰۶/۱۶** (دادهٔ خودش را می‌سازد/پاک می‌کند + تنظیم را بازنشانی می‌کند — الگوی بند ۵) |
 | test-coding.ts | fetch-e2e | موتور کدگذاری ساختارمند (P4-T0) | ۴۳ | `bunx tsx scripts/test-coding.ts` | 🟢 |
 | test-pallet.ts | fetch-e2e | شناسنامهٔ پالت ۱۴کاراکتری (P0.5-T2) | ۱۴ | `bunx tsx scripts/test-pallet.ts` | 🟢 |
 | test-warehouses-crud.ts | fetch-e2e | CRUD انبار + نوع سه‌گانه | ۲۱ | `bunx tsx scripts/test-warehouses-crud.ts` | 🟢 |

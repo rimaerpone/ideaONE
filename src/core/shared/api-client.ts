@@ -58,8 +58,9 @@ async function parseError(res: Response, fallback: string): Promise<never> {
   throw new ApiError(message, res.status)
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin', headers: sessionTokenHeaders() })
+// opts.signal — لغو درخواست (P2-T9: جستجوی سروری انتخاب‌گر عطف؛ debounce ری‌ست = درخواست مفقودشده)
+export async function apiGet<T>(path: string, opts?: { signal?: AbortSignal }): Promise<T> {
+  const res = await fetch(path, { credentials: 'same-origin', headers: sessionTokenHeaders(), signal: opts?.signal })
   if (res.status === 401) window.dispatchEvent(new Event('auth:expired'))
   if (!res.ok) await parseError(res, 'خطای نامشخص سرور')
   return (await res.json()) as T

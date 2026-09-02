@@ -7,7 +7,7 @@
 
 حل «گم‌شدن نامه و بی‌پاسخ‌گویی ارجاع» در ۴ شرکت: ثبت نامه با شماره‌گذاری سالانه بی‌دردسر، ارجاع زنجیره‌ای با تاریخچه کامل، مهلت‌گذاری با هشدار، پیوست فایل (نسخه v1.1) و پیشنهاد طبقه‌بندی/خلاصه با AI (فقط با تأیید انسانی).
 
-**خارج از دامنه v1.1** (→ نقشه راه): عطف/ارتباط نامه‌ها (P2-T9)، متن پاسخ جدا (P2-T4)، چاپ سربرگ (P2-T7)، جستجوی FTS (P2-T5)، شماره‌گذاری پیکربندی‌پذیر per-type (P2-T8)، امضای دیجیتال (P10)، OCR پیوست (P5).
+**خارج از دامنه v1.1** (→ نقشه راه): ~~عطف/ارتباط نامه‌ها (P2-T9)~~ **برطرف شد (R9)** · ~~شماره‌گذاری پیکربندی‌پذیر per-type (P2-T8)~~ **برطرف شد (R9)** · متن پاسخ جدا (P2-T4) · چاپ سربرگ (P2-T7) · جستجوی FTS (P2-T5) · امضای دیجیتال (P10) · OCR پیوست (P5).
 
 ## ۲. بازیگران و ماتریس مجوز
 
@@ -23,9 +23,9 @@
 
 ## ۳. مدل داده (خلاصه اختصاصی؛ کامل: `architecture/03-data-model.md` §16–17)
 
-- موجودیت‌ها: `Letter` (21 فیلد) + `LetterReferral` (زنجیره).
-- اینواریانت‌ها: `number` یکتا per-company/year (DocCounter)؛ `status=ARCHIVED ⇔ currentHolderId=null`؛ متن‌ها trim و غیرخالی؛ `aiCategory/aiSummary` فقط پس از HITL.
-- قواعد سلبی: GROUP نمی‌تواند نامه ثبت کند؛ گیرنده ارجاع باید عضو دامنه دیدِ شرکت نامه باشد؛ نامه بایگانی فقط با REFER جدید باز می‌شود.
+- موجودیت‌ها: `Letter` (۲۲ فیلد؛ P2-T9: `relationLetterId` → self-relation «LetterRelations» با onDelete: SetNull + ایندکس) + `LetterReferral` (زنجیره).
+- اینواریانت‌ها: `number` یکتا per-company/year/scope (DocCounter — سری مشترک LETTER یا جدا per-type مطابق P2-T8)؛ `status=ARCHIVED ⇔ currentHolderId=null`؛ متن‌ها trim و غیرخالی؛ `aiCategory/aiSummary` فقط پس از HITL؛ عطف: تک‌والد، حلقه و زنجیره > ۵ سطح ممنوع، هدف باید هم‌شرکت باشد.
+- قواعد سلبی: GROUP نمی‌تواند نامه ثبت کند؛ گیرنده ارجاع باید عضو دامنه دیدِ شرکت نامه باشد؛ نامه بایگانی فقط با REFER جدید باز می‌شود؛ تغییر عطف فقط دارنده فعلی (یا سازندهٔ DRAFT).
 
 ## ۴. نماها
 
@@ -239,6 +239,12 @@ ARCHIVED ──REFER──► IN_PROGRESS (تنها راه بازگشایی)
 - **کارایی (معیار پذیرش):** «مهر» (بدون نتیجه — بدترین حالت) ۸۶ms و «استعلام» (۴۷۶ نتیجه) ۵۳ms روی ۱۰٬۲۴۸ نامه؛ اولین جستجو پس از تخریب شامل rebuild یک‌باره ~۲٫۵ث.
 - **تست:** `scripts/test-t5-fts.ts` (۵۱ سنجه: ۱۵ واحد توکنایزر/هایلایت + ۲۳ API شامل شماره نمایشی/ایزولاسیون/عقب‌گرد/CSV + ۵ خودترمیم DB + کارایی) + `scripts/e2e-t5-fts.ts` (۱۴ سنجه مرورگر: مار در ستون موضوع، پاک‌کردن جستجو، واریانت عربی، موبایل ۳۹۰ بدون سرریز) + QA بصری VLM سه اسکرین‌شات.
 
+### شماره‌گذاری per-type + عطف دوسویه نامه‌ها (P2-T8/T9 — R9، ۱۴۰۵/۰۶/۱۶)
+
+- **شماره‌گذاری (T8):** هستهٔ خالص `core/shared/numbering.ts` (بدون server-only — سرور/کلاینت/باتری هم‌ایمپورت، الگوی ai-categories) با کلید CompanySetting `letters.numbering` (JSON: `separateByType` + پیشوند/پسوند هر نوع ≤۱۲ نویسه؛ parse سخت‌گیر — خرابی/غیبت = پیش‌فرض بدون شکست). سری شمارنده: مشترک `LETTER` (پیش‌فرض = رفتار همیشگی) یا جدا `LETTER:INCOMING|OUTGOING|INTERNAL` (unique شرکت+scope+سال). **displayNumber سرورساخته** («پیشوند سال/شماره پسوند» مثل «و ۱۴۰۵/۴۲ م») در همهٔ نقاط: فهرست، جزئیات، نشان رکورد، توست ثبت، عنوان تب، CSV، یادآور مهلت، numText ایندکس FTS (جستجوی «و ۱۴۰۵/۴۲» برمی‌گردد)، چاپ و پیش‌نمایش — قالب واحد. کارت «شماره‌گذاری نامه‌ها» در تنظیمات ادمین (تب شرکت): toggle سری جدا + دو input per نوع + نمونهٔ زنده + اعتبارسنجی آینه سرور + بازگردانی؛ پیش‌فرض کامل = ذخیرهٔ مقدار خالی (حذف تنظیم).
+- **عطف دوسویه (T9):** `relationLetterId` (تک‌والد، self-relation، SetNull + ایندکس). سه مسیر ورود: فیلد «عطف به نامه» در فرم ثبت (انتخاب‌گر Popover با جستجوی سروری قرارداد فهرست — debounce ۳۵۰ms + AbortController؛ id + برچسب در پیش‌نویس خودکار ذخیره می‌شود) · ثبت با relationLetterId (گارد دامنه شرکت + سقف عمق ۵ از همان ثبت) · `PATCH /api/letters/[id]` برای دارنده/سازنده (حذف idempotent، خودارجاع/حلقه/عمق/دامنه رد با پیام فارسی). جزئیات: `relation` (والد) + `relationChain` (۵ سطح، ریشه اول) + `relationChildren` (فرزندان — سمت دوم دوسویه)؛ بلوک «زنجیرهٔ عطف» در تب «متن و اقدام» با ردیف‌های قابل کلیک (شماره نمایشی + نوع + وضعیت + موضوع + تاریخ) و خود نامه برجسته («این نامه»)؛ ویرایش عطف فقط برای دارنده (آینه گارد سرور). سطر «عطف به» در شناسنامهٔ فرم و رکورد.
+- **تست:** باتری اختصاصی `scripts/test-r9-numbering-relation.ts` — ۳۱ سنجه (بخش A: ۱۴ سنجه شماره‌گذاری شامل پیش‌فرض/سری جدا/affix/DocCounter scope/اعتبارسنجی JSON/مقاومت تنظیم خراب/بازنشانی؛ بخش B: ۱۷ سنجه عطف شامل دوسویه/زنجیره/حذف idempotent/خودارجاع/حلقه/عمق ۵/ایزولاسیون شرکت/مالکیت/VIEWER/سجل RELATE) + رگرسیون: unit 16/16 · t4-t6 · t5-fts 51/51 · t10-t11 deadline · login-security · e2e-t4-answer 16/16 (E2E_WAIT_SCALE=3) · rbac کامل · check 24/24.
+
 ## ۷. API
 
 | متد/مسیر | ورودی | خروجی | خطاها | مجوز |
@@ -247,8 +253,9 @@ ARCHIVED ──REFER──► IN_PROGRESS (تنها راه بازگشایی)
 > **گارد API سطح ماژول (P1-T28):** همه routeهای این ماژول با `requireModule('office-automation')` شروع می‌شوند — ماژول خاموش سراسری/شرکتی = 404 فارسی (تست‌شده در test-rbac.ts و SC-008).
 | GET /api/letters | `?q&box=all\|inbox\|sent&type&status&urgency&sort=field:dir&page&pageSize` — قرارداد استاندارد P1-T3 (sort: createdAt/number/type/status/subject؛ سقف pageSize=۱۰۰). **P2-T5: q = جستجوی تمام‌متن FTS5 نرمال‌شده** (موضوع/متن/فرستنده/گیرنده/شماره نمایشی؛ توکن ≥۲ نویسه، حرف پیشوند*، رقم دقیق، AND ضمنی؛ تک‌نویسه/خطا → contains قدیمی) | پاکت `ListEnvelope`: `{items: LetterListItem[], total, page, pageSize, pageCount}` (T12: سقف ۱۰۰ برداشته شد — صفحه‌بندی/مرتب‌سازی/جستجو در سرور) | 401 | عضو دامنه |
 | GET /api/letters?format=csv (P2.5-U7) | همان فیلترهای فهرست — بدون صفحه‌بندی، سقف ۵٬۰۰۰ (P2-T5: q همان جستجوی FTS فهرست — آینه دقیق where) | `text/csv` با BOM + هدرهای X-Csv-Rows/X-Csv-Capped + filename `letters-*.csv` | 401 | عضو دامنه |
-| GET /api/letters/[id] | — | `{letter: LetterDetail}` با referrals + `companyLegalName` + `letterheadSubtitle/Footer` (P2.5-U7) | 401/404 «نامه یافت نشد» | دامنه |
-| POST /api/letters | بدنه ۵.۱ | `{id, number}` | 400های §۵.۱ | گروه رد |
+| GET /api/letters/[id] | — | `{letter: LetterDetail}` با referrals + `companyLegalName` + `letterheadSubtitle/Footer` (P2.5-U7) + **P2-T9: `displayNumber` + `relation`/`relationChain` (۵ سطح)/`relationChildren`** | 401/404 «نامه یافت نشد» | دامنه |
+| POST /api/letters | بدنهٔ ۵.۱ + `relationLetterId?` (P2-T9 — عطف هنگام ثبت) | `{id, number, displayNumber}` (P2-T8) | 400های §۵.۱ + «نامه عطف‌شده یافت نشد…» + «زنجیره عطف حداکثر ۵ سطح است» | گروه رد |
+| PATCH /api/letters/[id] (P2-T9 — R9) | `{relationLetterId: string | null}` — null/خالی = حذف عطف (idempotent) | `{ok}` | 404 «نامه یافت نشد» · 400 «این نامه در کارتابل شما نیست» · 400 «نامه نمی‌تواند به خودش عطف شود» · 400 «این عطف حلقه می‌سازد…» · 400 «زنجیره عطف حداکثر ۵ سطح است» · 400 «نامه عطف‌شده یافت نشد (یا متعلق به شرکت این نامه نیست)» | دارنده/سازندهٔ پیش‌نویس (نیازمند requireWriteRole) |
 | POST /api/letters/[id]/actions | `{action, toUserId?, note?, answerText?}` — action ∈ REFER/ANSWER/APPROVE/ARCHIVE/**PRINT** (P2.5-U7: PRINT فقط سجل حسابرسی می‌سازد، بدون تغییر وضعیت/دارنده) | `{ok}` | §۶ + 404 · ANSWER بدون answerText → ۴۰۰ «متن پاسخ الزامی است» (P2-T4) | دارنده (PRINT: دامنه) |
 | POST /api/letters/bulk (P2.5-U2) | `{action:'ARCHIVE', ids: string[]}` — سگمنت استاتیک «bulk» بر [id] اولویت دارد | `{affected, results: [{id, number, ok, error?}]}` | 400 «عملیات گروهی پشتیبانی نمی‌شود» · 403 VIEWER · «هیچ نامه‌ای انتخاب نشده است» · «حداکثر ۱۰۰ نامه…» | نویسنده؛ رکوردبه‌رکورد مثل actOnLetter |
 | GET /api/letters/[id]/attachments | — | `{attachments: [{id,fileName,mimeType,sizeBytes,createdAt}]}` | 401/404 | دامنه |
@@ -274,7 +281,7 @@ ARCHIVED ──REFER──► IN_PROGRESS (تنها راه بازگشایی)
 | APPROVE (خود≠سازنده) | سازنده | نامه تأیید شد | subject | LETTER | cartable |
 
 رویدادهای Outbox: `letter.created{letterId,number,type,companyId}` · `letter.referred{letterId,number,action}` · `letter.attachment.added{letterId,number,fileName}` · `ai.applied{letterId,number,category}`.
-Audit: CREATE / REFER / ANSWER / APPROVE / ARCHIVE / ATTACH / AI_SUGGEST / AI_APPLY.
+Audit: CREATE / REFER / ANSWER / APPROVE / ARCHIVE / ATTACH / AI_SUGGEST / AI_APPLY / **RELATE (P2-T9 — با relationNumber نامهٔ مرجع؛ حذف عطف با flag cleared)**.
 
 ## ۹. متن‌ها و لیبل‌ها
 
@@ -298,6 +305,8 @@ Audit: CREATE / REFER / ANSWER / APPROVE / ARCHIVE / ATTACH / AI_SUGGEST / AI_AP
 | یادآور مهلت فقط بصری | ~~مهلت گذشته دیده نمی‌شود مگر باز کردن~~ | ~~چک دوره‌ای + notify~~ **برطرف شد (P2-T11)**: runner ساعتی deadline-reminder + دو نقطه یادآور (T3/DUE) + dedupKey یکتا بدون اسپم — ۷۰ سنجه | P2-T11 ✅ |
 | ~~چاپ ندارد~~ **برطرف شد (P2-T7 / P2.5-U7)** | ~~نسخه کاغذی دستی~~ | پورتال چاپ A4 با سربرگ per-company — ۵۱ سنجه | P2-T7 ✅ |
 | سقف ۱۰۰ رکورد | نامه‌های قدیم پنهان | صفحه‌بندی سرور | P1-T12 |
+| ~~عطف/ارتباط نامه‌ها ندارد~~ **برطرف شد (P2-T9/R9)** | ~~نامه‌های مرتبط در هم گم می‌شوند~~ | relationLetterId دوسویه + زنجیرهٔ ۵ سطحی در جزئیات + انتخاب‌گر جستجویی در فرم — ۳۱ سنجه باتری R9 | P2-T9 ✅ |
+| ~~شماره‌گذاری تک‌قالب~~ **برطرف شد (P2-T8/R9)** | ~~سری مشترک همه انواع / بدون پیشوند~~ | پیکربندی per-type در تنظیمات ادمین (سری جدا + پیشوند/پسوند) + displayNumber واحد همه‌جا | P2-T8 ✅ |
 | RBAC سلبی VIEWER | بیننده می‌تواند ثبت کند | گارد نقش در سرویس | P1-T31 |
 | ~~پیوست فقط از جزئیات~~ **برطرف شد (P1-T37)** | ~~در فرم ثبت جدید امکان پیوست نیست~~ | انتخاب فایل در همان فرم ثبت + بارگذاری بلافاصله پس از create — انجام و تست‌شده (۱۲ سنجه scripts/test-t37-attachments.ts) | P1-T37 ✅ |
 | پیش‌نمایش PDF/تصویر ندارد | دانلود برای دیدن لازم است | پیش‌نمایش درون‌صفحه | P2-T2 |

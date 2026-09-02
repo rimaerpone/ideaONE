@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Printer, X } from 'lucide-react'
 import { apiPost } from '@/core/shared/api-client'
 import type { LetterDetail } from '@/types/platform'
-import { faDigits, formatJalaliLong } from '@/core/shared/jalali'
+import { faDigits, faDocNumber, formatJalaliLong } from '@/core/shared/jalali'
 
 const CONF_FA: Record<string, string> = { NORMAL: 'عادی', CONFIDENTIAL: 'محرمانه', SECRET: 'سری' }
 
@@ -87,7 +87,8 @@ export function LetterPrintDialog({ letter, open, onOpenChange }: { letter: Lett
           {/* سرنامه: شماره / تاریخ / پیوست (راست) — طبقه‌بندی (چپ) */}
           <div className="mt-4 flex items-start justify-between gap-4 text-[13px] leading-7">
             <dl className="space-y-0.5">
-              <div className="flex gap-1.5"><dt className="font-bold">شماره:</dt><dd>{faDigits(letter.number)}</dd></div>
+              {/* P2-T8 — قالب واحد شماره نمایشی سرورساخته (پیشوند/پسوند per-type) */}
+              <div className="flex gap-1.5"><dt className="font-bold">شماره:</dt><dd>{letter.displayNumber || faDocNumber(letter.number, letter.createdAt)}</dd></div>
               <div className="flex gap-1.5"><dt className="font-bold">تاریخ:</dt><dd>{formatJalaliLong(letter.createdAt)}</dd></div>
               <div className="flex gap-1.5"><dt className="font-bold">پیوست:</dt><dd>{letter.attachmentsCount > 0 ? `${faDigits(letter.attachmentsCount)} فایل` : 'ندارد'}</dd></div>
             </dl>

@@ -270,9 +270,36 @@ export type GoodsRequest = {
   items: { id: string; productCode: string; productName: string; size: string; qtyM2: number }[]
 }
 
+// ---------- P2-T8 — شماره‌گذاری نامه per-type (کلید CompanySetting: letters.numbering) ----------
+
+export const LETTER_NUMBERING_TYPES = ['INCOMING', 'OUTGOING', 'INTERNAL'] as const
+export type LetterNumberingType = (typeof LETTER_NUMBERING_TYPES)[number]
+
+/** قاعده یک نوع: پیشوند/پسوند دور «سال/شماره» (اختیاری، خالی = بدون) */
+export type LetterNumberingRule = { prefix: string; suffix: string }
+
+/** پیکربندی کامل — separateByType=false یعنی رفتار پیش‌فرض (سری مشترک همه انواع) */
+export type LetterNumberingConfig = {
+  separateByType: boolean
+  types: Record<LetterNumberingType, LetterNumberingRule>
+}
+
+// ---------- P2-T9 — عطف نامه (عنصر زنجیره؛ ریشه اول، بعدی‌ها به‌ترتیب فرزند→والد) ----------
+export type LetterRelationItem = {
+  id: string
+  number: number
+  displayNumber: string
+  subject: string
+  type: string
+  status: string
+  createdAt: string
+}
+
 export type LetterListItem = {
   id: string
   number: number
+  /** P2-T8 — شماره نمایشی سرورساخته (پیشوند/پسوند/قالب واحد)؛ همیشه حاضر */
+  displayNumber: string
   type: string
   subject: string
   status: string
@@ -295,6 +322,8 @@ export type LetterListItem = {
 export type LetterDetail = {
   id: string
   number: number
+  /** P2-T8 — شماره نمایشی سرورساخته با پیکربندی per-type */
+  displayNumber: string
   type: string
   subject: string
   body: string
@@ -320,6 +349,12 @@ export type LetterDetail = {
   aiSummary: string | null
   /** شمار پیوست — برچسب تب داخلی «پیوست‌ها (N)» (P2.5-U10) */
   attachmentsCount: number
+  /** P2-T9 — عطف مستقیم (والد) — null یعنی این نامه عطف به نامه‌ای نیست */
+  relation: LetterRelationItem | null
+  /** P2-T9 — زنجیره اجداد تا ۵ سطح (ریشه اول → والد مستقیم آخر)؛ خالی = بدون عطف */
+  relationChain: LetterRelationItem[]
+  /** P2-T9 — نامه‌های عطف‌شده به این نامه (فرزندان — سمت دوم رابطه دوسویه) */
+  relationChildren: LetterRelationItem[]
   referrals: { id: string; action: string; note: string | null; answerText: string | null; deadlineAt: string | null; createdAt: string; fromName: string; fromId: string; toName: string; toUserId: string }[]
 }
 

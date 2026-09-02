@@ -15,6 +15,7 @@ import { LOGIN_RATE_LIMIT_DESC } from '@/core/auth/login-rate-limit'
 import { listEnvelope, listSkip, type ParsedListQuery } from '@/core/shared/list-query'
 import { parseJalaliInput, formatJalali } from '@/core/shared/jalali'
 import { actionLabelFa } from '@/core/shared/audit-labels'
+import { validateLetterNumberingValue } from '@/core/shared/numbering'
 import type { ServiceResult } from '@/core/shared/types'
 
 /**
@@ -436,6 +437,8 @@ const COMPANY_SETTING_VALIDATORS: Record<string, (v: string) => string | null> =
   // P2.5-U7 / P2-T7 — سربرگ چاپ نامه (متن اختیاری؛ خالی = پیش‌فرض بدون سطر اضافی)
   'letterhead.subtitle': (v) => (v.length <= 120 ? null : 'سطر سربرگ حداکثر ۱۲۰ نویسه است'),
   'letterhead.footer': (v) => (v.length <= 200 ? null : 'پاورقی چاپ حداکثر ۲۰۰ نویسه است'),
+  // P2-T8 (R9) — شماره‌گذاری نامه per-type (JSON؛ خالی = پیش‌فرض سری مشترک)
+  'letters.numbering': validateLetterNumberingValue,
 }
 
 export async function listCompanySettings(ctx: SessionContext): Promise<ServiceResult<Record<string, unknown>>> {
@@ -453,6 +456,7 @@ export async function listCompanySettings(ctx: SessionContext): Promise<ServiceR
         'requests.notifyCeilingM2': raw['requests.notifyCeilingM2'] ?? '0',
         'letterhead.subtitle': raw['letterhead.subtitle'] ?? '',
         'letterhead.footer': raw['letterhead.footer'] ?? '',
+        'letters.numbering': raw['letters.numbering'] ?? '',
       },
       companyName: company?.name ?? null,
     },

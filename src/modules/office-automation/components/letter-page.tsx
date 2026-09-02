@@ -24,8 +24,10 @@ import { QK_PREFIX } from '@/core/query/keys'
 import { faJalaliDate, faOptional, faRequired } from '@/core/forms/schemas'
 import { useLetterQuery, useLetterAttachmentsQuery, useReferUsersQuery } from '@/modules/office-automation/queries'
 import { AI_CATEGORIES, AI_SUMMARY_MAX } from '@/modules/office-automation/ai-categories'
-import type { AiSuggestion, AttachmentItem, LetterDetail, OcrScanData, UserItem } from '@/types/platform'
+import type { AiSuggestion, AttachmentItem, LetterDetail, LetterRelationItem, OcrScanData, UserItem } from '@/types/platform'
 import { LETTER_TYPE_LABELS, StatusBadge, EmptyState } from '@/components/common/ui-bits'
+// P2-T9 — انتخاب‌گر عطف نامه (جستجوی سروری — قرارداد فهرست نامه‌ها)
+import { LetterRelationPicker, type RelationValue } from '@/modules/office-automation/components/letter-relation-picker'
 import { RecordPageShell } from '@/components/common/record-page-shell'
 import { LetterPrintDialog } from '@/modules/office-automation/components/letter-print'
 import { CharCount, FieldInput, FieldJalaliDate, FieldSelect, FieldTextarea, KbdHint } from '@/components/common/form-bits'
@@ -40,7 +42,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
-  Archive, ArrowLeftCircle, CheckCircle2, Download, Loader2, MessageSquareReply, Paperclip, Printer, RotateCcw, ScanText, Send, Sparkles, Upload, X,
+  Archive, ArrowLeftCircle, CheckCircle2, CornerDownLeft, Download, Link2, Loader2, MessageSquareReply, Paperclip, Printer, RotateCcw, ScanText, Send, Sparkles, Upload, X,
 } from 'lucide-react'
 import { formatJalali, formatJalaliLong, faDigits, faNumber, faDocNumber, parseJalaliInput } from '@/core/shared/jalali'
 import { JalaliDatePicker } from '@/components/common/jalali-date-picker'
@@ -116,7 +118,8 @@ function LetterDetailPage({ recordId, tabId }: { recordId: string; tabId: string
       onRetry={() => void refetch()}
       badges={letter ? (
         <>
-          <Badge className="border-0 bg-primary/10 text-primary">{LETTER_TYPE_LABELS[letter.type]} · شماره {faDocNumber(letter.number, letter.createdAt)}</Badge>
+          {/* P2-T8 — قالب واحد شماره نمایشی سرورساخته (پیشوند/پسوند per-type) */}
+          <Badge className="border-0 bg-primary/10 text-primary">{LETTER_TYPE_LABELS[letter.type]} · شماره {letter.displayNumber ?? faDocNumber(letter.number, letter.createdAt)}</Badge>
           <StatusBadge status={letter.status} />
           {letter.urgency === 'URGENT' ? <Badge className="border-0 bg-red-100 text-red-700">فوری</Badge> : null}
           {letter.confidentiality !== 'NORMAL' ? (
@@ -130,6 +133,8 @@ function LetterDetailPage({ recordId, tabId }: { recordId: string; tabId: string
         { label: 'تاریخ ثبت', value: formatJalaliLong(letter.createdAt) },
         { label: 'شرکت', value: letter.companyName },
         { label: 'در کارتابل', value: letter.holderName ?? '—' },
+        // P2-T9 — عطف مستقیم در شناسنامه (زنجیرهٔ کامل در تب «متن و اقدام»)
+        ...(letter.relation ? [{ label: 'عطف به', value: `${letter.relation.displayNumber} — ${letter.relation.subject}` }] : []),
         ...(deadline ? [{ label: 'مهلت اقدام', value: <span className={overdue ? 'text-red-600' : undefined}>{formatJalali(letter.deadlineAt!)}{overdue ? ' — گذشته است!' : ''}</span> }] : []),
         // P2-T10 — فقط وقتی گام جاری مهلت اختصاصی متفاوت با مهلت نامه دارد
         ...(stepDeadline && (!deadline || stepDeadline.getTime() !== deadline.getTime()) ? [{
@@ -315,6 +320,9 @@ function LetterContentTab({ letter, onActed, referOpen, onReferClose, answerOpen
         {letter.body}
       </div>
 
+      {/* P2-T9 — زنجیرهٔ عطف دوسویه: اجداد ← خود نامه ← نامه‌های عطف‌شده */}
+      <LetterRelationBlock letter={letter} onActed={onActed} />
+
       {/* پنل ارجاع درون‌خطی — به‌جای دیالوگ؛ در جریان کار کاربر می‌ماند */}
       {isMine && canWrite && referOpen ? (
         <div
@@ -479,6 +487,142 @@ function LetterContentTab({ letter, onActed, referOpen, onReferClose, answerOpen
   )
 }
 
+// ---------------- P2-T9 — زنجیرهٔ عطف (بلوک جزئیات) ----------------
+
+/** ردیف یک نامه در زنجیره — کلیک = باز کردن همان نامه (تب جامه‌ویژه) */
+function RelationRow({ item, isCurrent, onOpen }: { item: LetterRelationItem; isCurrent?: boolean; onOpen?: () => void }) {
+  const body = (
+    <>
+      <span className="shrink-0 font-bold text-primary">{item.displayNumber}</span>
+      <Badge className="shrink-0 border-0 bg-primary/10 px-1.5 py-0 text-[10px] text-primary">{LETTER_TYPE_LABELS[item.type] ?? item.type}</Badge>
+      <StatusBadge status={item.status} />
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.subject}</span>
+      <span className="shrink-0 text-[10px] text-muted-foreground">{formatJalali(item.createdAt)}</span>
+      {isCurrent ? <Badge className="shrink-0 border-0 bg-secondary px-1.5 py-0 text-[10px]">این نامه</Badge> : null}
+    </>
+  )
+  if (!onOpen) {
+    return <div className={cn('flex items-center gap-2 px-4 py-2 text-xs', isCurrent && 'bg-primary/5')}>{body}</div>
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'flex w-full items-center gap-2 px-4 py-2 text-start text-xs transition-colors hover:bg-accent',
+        isCurrent && 'bg-primary/5',
+      )}
+      title={`باز کردن ${item.displayNumber}`}
+    >
+      {body}
+    </button>
+  )
+}
+
+/**
+ * بلوک زنجیرهٔ عطف (P2-T9): ریشه‌ها → خود نامه (برجسته) → نامه‌های عطف‌شده.
+ * ویرایش عطف فقط برای دارنده/سازنده (آینه گارد سروری setLetterRelation) —
+ * خطای سرور (حلقه/عمق > ۵/دامنهٔ شرکت/مالکیت) عیناً به کاربر نمایش داده می‌شود.
+ */
+function LetterRelationBlock({ letter, onActed }: { letter: LetterDetail; onActed: () => void }) {
+  const me = useApp((s) => s.me?.user ?? null)
+  const canWrite = useCanWrite()
+  const openRecord = useWorkspace((s) => s.openRecord)
+  const isMine = (letter.holderId === me?.id && letter.status === 'IN_PROGRESS')
+    || (letter.status === 'DRAFT' && letter.creatorId === me?.id)
+  const [editing, setEditing] = useState(false)
+  const [pick, setPick] = useState<RelationValue>(null)
+  const [busy, setBusy] = useState(false)
+
+  const current: LetterRelationItem = {
+    id: letter.id, number: letter.number, displayNumber: letter.displayNumber ?? faDocNumber(letter.number, letter.createdAt),
+    subject: letter.subject, type: letter.type, status: letter.status, createdAt: letter.createdAt,
+  }
+  const hasAny = !!letter.relation || letter.relationChain.length > 0 || letter.relationChildren.length > 0
+
+  const startEdit = () => {
+    setPick(letter.relation ? { id: letter.relation.id, subject: letter.relation.subject, displayNumber: letter.relation.displayNumber } : null)
+    setEditing(true)
+  }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await apiPost(`/api/letters/${letter.id}`, { relationLetterId: pick?.id ?? null }, 'PATCH')
+      toastOk({
+        title: pick ? 'عطف ثبت شد' : 'عطف حذف شد',
+        description: pick ? 'این نامه در زنجیرهٔ نامهٔ انتخاب‌شده قرار گرفت' : 'نامه از زنجیرهٔ عطف جدا شد',
+      })
+      setEditing(false)
+      onActed()
+    } catch (e) {
+      toastErr({ title: 'خطا در ثبت عطف', description: e instanceof Error ? e.message : 'ثبت نشد' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border" data-testid="letter-relation-block">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
+        <p className="flex items-center gap-1.5 text-sm font-bold">
+          <Link2 className="h-4 w-4 text-muted-foreground" />
+          زنجیرهٔ عطف
+          {letter.relationChain.length > 0 ? <span className="text-[11px] font-normal text-muted-foreground">({faNumber(letter.relationChain.length)} مرجع بالاتر)</span> : null}
+          {letter.relationChildren.length > 0 ? <span className="text-[11px] font-normal text-muted-foreground">({faNumber(letter.relationChildren.length)} عطف‌شده)</span> : null}
+        </p>
+        {isMine && canWrite && !editing ? (
+          <Button size="sm" variant="outline" onClick={startEdit} className="h-7 gap-1 px-2 text-[11px]" data-testid="letter-relation-edit">
+            <Link2 className="h-3 w-3" />
+            {letter.relation ? 'ویرایش عطف' : 'افزودن عطف'}
+          </Button>
+        ) : null}
+      </div>
+
+      {editing ? (
+        <div className="space-y-2.5 px-4 py-3" data-testid="letter-relation-editor">
+          <p className="text-[11px] leading-5 text-muted-foreground">
+            نامهٔ مرجع را جستجو و انتخاب کنید؛ پاک‌کردن انتخاب + ذخیره = حذف عطف.
+            حلقه و زنجیرهٔ عمیق‌تر از ۵ سطح در سرور رد می‌شود.
+          </p>
+          <LetterRelationPicker value={pick} onChange={setPick} disabled={busy} placeholder="جستجوی نامهٔ مرجع…" aria-label="عطف به نامه" />
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => void save()} disabled={busy} className="gap-1.5">
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              {pick ? 'ثبت عطف' : 'حذف عطف'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={busy}>انصراف</Button>
+          </div>
+        </div>
+      ) : hasAny ? (
+        <div className="divide-y">
+          {letter.relationChain.length > 0 ? (
+            <p className="px-4 py-1.5 text-[10px] font-medium text-muted-foreground">
+              <CornerDownLeft className="me-1 inline h-3 w-3" />مراجع (از ریشه تا والد مستقیم)
+            </p>
+          ) : null}
+          {letter.relationChain.map((l) => (
+            <RelationRow key={l.id} item={l} onOpen={() => openRecord('letters', l.id, l.subject)} />
+          ))}
+          <RelationRow item={current} isCurrent />
+          {letter.relationChildren.length > 0 ? (
+            <p className="px-4 py-1.5 text-[10px] font-medium text-muted-foreground">
+              <CornerDownLeft className="me-1 inline h-3 w-3" />نامه‌های عطف‌شده به این نامه
+            </p>
+          ) : null}
+          {letter.relationChildren.map((l) => (
+            <RelationRow key={l.id} item={l} onOpen={() => openRecord('letters', l.id, l.subject)} />
+          ))}
+        </div>
+      ) : (
+        <p className="px-4 py-3 text-xs leading-5 text-muted-foreground">
+          این نامه عطفی ندارد.{isMine && canWrite ? ' با «افزودن عطف» آن را به نامهٔ مرجع وصل کنید.' : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ---------------- تب «پیوست‌ها» ----------------
 
 function LetterAttachmentsTab({ letterId, onChanged }: { letterId: string; onChanged: () => void }) {
@@ -605,6 +749,9 @@ const letterFormSchema = z.object({
   receiverTitle: faOptional(200),
   referTo: z.string(),
   deadline: faJalaliDate('مهلت اقدام'),
+  // P2-T9 — عطف نامه: id خام برای سرور + برچسب نمایشی برای رندر/پیش‌نویس (پیش‌نویس خودکار این دو را ذخیره می‌کند)
+  relationLetterId: z.string().max(64),
+  relationLabel: z.string().max(280),
 })
 type LetterFormValues = z.infer<typeof letterFormSchema>
 
@@ -613,6 +760,7 @@ function letterDefaults(): LetterFormValues {
   return {
     type: 'INCOMING', confidentiality: 'NORMAL', urgency: 'NORMAL',
     subject: '', body: '', senderTitle: '', receiverTitle: '', referTo: '', deadline: '',
+    relationLetterId: '', relationLabel: '',
   }
 }
 
@@ -762,13 +910,15 @@ function NewLetterPage({ tabId }: { tabId: string }) {
   const submit = handleSubmit(async (v) => {
     setBusy(true)
     try {
-      const d = await apiPost<{ id: string; number: number }>('/api/letters', {
+      const d = await apiPost<{ id: string; number: number; displayNumber?: string }>('/api/letters', {
         type: v.type, subject: v.subject, body: v.body,
         senderTitle: v.senderTitle || undefined,
         receiverTitle: v.receiverTitle || undefined,
         confidentiality: v.confidentiality, urgency: v.urgency,
         deadlineAt: v.deadline || undefined,
         referTo: v.referTo || undefined,
+        // P2-T9 — عطف به نامه موجود (گارد دامنه شرکت/حلقه/عمق در سرویس)
+        relationLetterId: v.relationLetterId || undefined,
       })
 
       // P1-T37 — بارگذاری پیوست‌ها بلافاصله پس از ثبت، بدون باز کردن جزئیات نامه
@@ -790,7 +940,10 @@ function NewLetterPage({ tabId }: { tabId: string }) {
       const attachNote = pendingFiles.length > 0
         ? (attached > 0 ? ` · ${faNumber(attached)} پیوست بارگذاری شد` : '')
         : ''
-      toastOk({ title: 'نامه ثبت شد', description: `شماره نامه: ${faDocNumber(d.number)}${attachNote}` })
+      // P2-T8 — قالب واحد شماره نمایشی از سرور (پیکربندی per-type) — عطف‌شدگ: بازگشت عطف هم اطلاع‌رسانی می‌شود
+      const displayNo = d.displayNumber ?? faDocNumber(d.number)
+      const relateNote = v.relationLetterId ? ' · در زنجیرهٔ عطف ثبت شد' : ''
+      toastOk({ title: 'نامه ثبت شد', description: `شماره نامه: ${displayNo}${attachNote}${relateNote}` })
       if (failed.length > 0) {
         toastErr({
           title: 'پیوست بارگذاری نشد',
@@ -804,8 +957,8 @@ function NewLetterPage({ tabId }: { tabId: string }) {
       clearDraft(storageKey) // P1-T24 — پیش‌نویس پس از ثبت موفق پاک می‌شود
       reset(letterDefaults())
       void queryClient.invalidateQueries({ queryKey: QK_PREFIX.letters })
-      // جامه‌ویژه: تب «نامه جدید» → «نامه ۱۲۳ …» (P1.5-T1)
-      materializeTab(tabId, d.id, `نامه ${faDocNumber(d.number)} — ${v.subject}`)
+      // جامه‌ویژه: تب «نامه جدید» → «نامه ۱۲۳ …» (P1.5-T1) — P2-T8: قالب نمایشی واحد
+      materializeTab(tabId, d.id, `نامه ${d.displayNumber ?? faDocNumber(d.number)} — ${v.subject}`)
     } catch (e) {
       toastErr({ title: 'خطا در ثبت', description: e instanceof Error ? e.message : 'ثبت ناموفق' })
     } finally {
@@ -849,6 +1002,8 @@ function NewLetterPage({ tabId }: { tabId: string }) {
         { label: 'شرکت ثبت‌کننده', value: activeCompany?.name ?? '—' },
         { label: 'تاریخ امروز', value: formatJalali(new Date().toISOString()) },
         { label: 'ارجاع اولیه', value: users.find((u) => u.id === watch('referTo'))?.fullName ?? 'بدون ارجاع (پیش‌نویس دبیرخانه)' },
+        // P2-T9 — عطف انتخاب‌شده در فرم (زنده — با تغییر انتخاب به‌روز می‌شود)
+        ...(watch('relationLetterId') ? [{ label: 'عطف به', value: watch('relationLabel') || 'نامه عطف‌شده' }] : []),
       ]}
       footer={(
         <>
@@ -985,6 +1140,29 @@ function NewLetterPage({ tabId }: { tabId: string }) {
             extra={deadlinePast ? (
               <p className="text-[11px] font-medium leading-4 text-amber-600">این تاریخ در گذشته است — اگر عمدی نیست، مهلت را اصلاح کنید</p>
             ) : null}
+          />
+          {/* P2-T9 — عطف به نامه موجود (جستجوی سروری؛ حلقه/عمق > ۵ و دامنهٔ شرکت در سرور گارد می‌شود) */}
+          <Controller
+            control={control}
+            name="relationLetterId"
+            render={({ field }) => (
+              <div className="space-y-1.5 sm:col-span-2" data-testid="letter-new-relation">
+                <Label>عطف به نامه (اختیاری)</Label>
+                <LetterRelationPicker
+                  value={field.value ? { id: field.value, subject: watch('relationLabel') || 'نامه عطف‌شده' } : null}
+                  onChange={(v) => {
+                    setValue('relationLetterId', v?.id ?? '', { shouldDirty: true })
+                    setValue('relationLabel', v ? `${v.subject}${v.displayNumber ? ` — ${v.displayNumber}` : ''}`.slice(0, 280) : '', { shouldDirty: true })
+                  }}
+                  placeholder="انتخاب نامهٔ مرجع…"
+                  aria-label="عطف به نامه"
+                />
+                <p className="text-[11px] leading-4 text-muted-foreground">
+                  نامهٔ تازه در زنجیرهٔ عطف نامهٔ انتخاب‌شده می‌نشیند (رابطهٔ دوسویه — در جزئیات هر دو طرف قابل مشاهده).
+                  حلقه و زنجیرهٔ عمیق‌تر از ۵ سطح در سرور رد می‌شود؛ انتخاب با پیش‌نویس خودکار ذخیره می‌شود.
+                </p>
+              </div>
+            )}
           />
         </FormSection>
 
